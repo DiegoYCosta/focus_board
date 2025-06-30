@@ -9,6 +9,9 @@ import 'package:link_preview_generator/link_preview_generator.dart';
 import 'package:provider/provider.dart';
 import 'theme_manager.dart';
 import 'settings_page.dart';
+import 'widgets/empty_tips_placeholder.dart';
+import 'widgets/tip_gallery_dialog.dart';
+import 'dart:ui' show Size;
 
 class HomePage extends StatefulWidget {
   @override
@@ -24,6 +27,16 @@ class _HomePageState extends State<HomePage> with WindowListener {
   Timer? slideshowTimer;
   bool _isHovering = false;
 
+  Set<int> selectedIndexes = {};
+
+  List<TipModel> get visibleTips {
+    if (selectedIndexes.isEmpty) return tips;
+    return [
+      for (final idx in selectedIndexes)
+        if (idx >= 0 && idx < tips.length) tips[idx]
+    ];
+  }
+
   @override
   void initState() {
     super.initState();
@@ -38,11 +51,22 @@ class _HomePageState extends State<HomePage> with WindowListener {
     super.dispose();
   }
 
+  @override
+  void onWindowResize() async {
+    final size = await windowManager.getSize();
+    final newWidth = size.width < 150.0 ? 150.0 : size.width;
+    final newHeight = size.height < 250.0 ? 250.0 : size.height;
+    if (newWidth != size.width || newHeight != size.height) {
+      await windowManager.setSize(Size(newWidth, newHeight));
+    }
+  }
+
   Future<void> _loadTips() async {
     final loaded = await TipStorage.loadTips();
     setState(() {
       tips = loaded;
       if (currentIndex >= tips.length) currentIndex = 0;
+      if (currentIndex >= visibleTips.length) currentIndex = 0;
     });
   }
 
@@ -57,6 +81,31 @@ class _HomePageState extends State<HomePage> with WindowListener {
     if (uri != null && await canLaunchUrl(uri)) {
       await launchUrl(uri);
     }
+  }
+
+  void _openTipGallery() async {
+    final Set<int> initialSelection = selectedIndexes.isEmpty
+        ? Set.from(List.generate(tips.length, (i) => i))
+        : Set.from(selectedIndexes);
+
+    await showDialog(
+      context: context,
+      builder: (_) => TipGalleryDialog(
+        tips: tips,
+        selectedIndexes: initialSelection,
+        onEdit: (idx) async {
+          Navigator.pop(context);
+          await _addOrEditTip(tips[idx], idx);
+        },
+        onSelectionChanged: (newSelection) {
+          setState(() {
+            selectedIndexes = newSelection;
+            currentIndex = 0;
+          });
+        },
+      ),
+    );
+    setState(() {});
   }
 
   String _themeLabel(AppThemeType t) {
@@ -75,10 +124,13 @@ class _HomePageState extends State<HomePage> with WindowListener {
   void _startSlideshow() {
     slideshowActive = true;
     slideshowTimer?.cancel();
-    slideshowTimer = Timer.periodic(Duration(seconds: slideshowInterval), (_) {
-      _nextTip();
+    setState(() {
+      currentIndex = 0;
     });
-    setState(() {});
+    slideshowTimer = Timer.periodic(
+      Duration(seconds: slideshowInterval),
+          (_) => _nextTip(),
+    );
   }
 
   void _stopSlideshow() {
@@ -88,17 +140,19 @@ class _HomePageState extends State<HomePage> with WindowListener {
   }
 
   void _nextTip() {
-    if (tips.isNotEmpty) {
+    final list = visibleTips;
+    if (list.isNotEmpty) {
       setState(() {
-        currentIndex = (currentIndex + 1) % tips.length;
+        currentIndex = (currentIndex + 1) % list.length;
       });
     }
   }
 
   void _prevTip() {
-    if (tips.isNotEmpty) {
+    final list = visibleTips;
+    if (list.isNotEmpty) {
       setState(() {
-        currentIndex = (currentIndex - 1 + tips.length) % tips.length;
+        currentIndex = (currentIndex - 1 + list.length) % list.length;
       });
     }
   }
@@ -127,7 +181,7 @@ class _HomePageState extends State<HomePage> with WindowListener {
   }
 
   Widget _tipContent(TipModel tip) {
-    final scrollableContent = SingleChildScrollView(
+    final content = SingleChildScrollView(
       padding: EdgeInsets.all(12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -141,16 +195,13 @@ class _HomePageState extends State<HomePage> with WindowListener {
                   duration: Duration(milliseconds: 120),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(8),
-                    border: _isHovering && tip.link != null && tip.link!.trim().isNotEmpty
+                    border: _isHovering && tip.link != null && tip.link!.isNotEmpty
                         ? Border.all(color: Colors.blue.withOpacity(0.12), width: 1)
                         : null,
                   ),
-                  child: Image.file(
-                    tip.getFile()!,
-                    fit: BoxFit.contain,
-                  ),
+                  child: Image.file(tip.getFile()!),
                 ),
-                if (tip.link != null && tip.link!.trim().isNotEmpty && tip.content.trim().isEmpty)
+                if (tip.link != null && tip.link!.isNotEmpty && tip.content.isEmpty)
                   Padding(
                     padding: EdgeInsets.all(4),
                     child: Tooltip(
@@ -160,228 +211,219 @@ class _HomePageState extends State<HomePage> with WindowListener {
                   ),
               ],
             ),
-          if (tip.isImage && tip.content.trim().isNotEmpty)
-            SizedBox(height: 16),
-          if (tip.content.trim().isNotEmpty)
+          if (tip.isImage && tip.content.isNotEmpty) SizedBox(height: 16),
+          if (tip.content.isNotEmpty)
             MouseRegion(
-              cursor: tip.link != null && tip.link!.trim().isNotEmpty
+              cursor: tip.link != null && tip.link!.isNotEmpty
                   ? SystemMouseCursors.click
                   : SystemMouseCursors.basic,
               onEnter: (_) => setState(() => _isHovering = true),
               onExit: (_) => setState(() => _isHovering = false),
               child: GestureDetector(
-                onTap: tip.link != null && tip.link!.trim().isNotEmpty
-                    ? () => _openUrl(tip.link!)
-                    : null,
+                onTap: tip.link != null && tip.link!.isNotEmpty ? () => _openUrl(tip.link!) : null,
                 child: AnimatedContainer(
                   duration: Duration(milliseconds: 120),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(6),
-                    border: _isHovering && tip.link != null && tip.link!.trim().isNotEmpty
+                    border: _isHovering && tip.link != null && tip.link!.isNotEmpty
                         ? Border.all(color: Colors.blue.withOpacity(0.13), width: 1)
                         : null,
-                    color: _isHovering && tip.link != null && tip.link!.trim().isNotEmpty
+                    color: _isHovering && tip.link != null && tip.link!.isNotEmpty
                         ? Colors.blue.withOpacity(0.025)
                         : Colors.transparent,
                   ),
                   padding: EdgeInsets.symmetric(horizontal: 2, vertical: 2),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Flexible(
                         child: Text(
                           tip.content,
                           style: TextStyle(
                             fontSize: 18,
-                            color: Theme.of(context).textTheme.bodyLarge?.color,
-                            decoration: tip.link != null && tip.link!.trim().isNotEmpty
-                                ? TextDecoration.underline
-                                : null,
-                            decorationColor: Colors.blue.withOpacity(0.16),
-                            decorationThickness: 1,
-                            shadows: tip.link != null && tip.link!.trim().isNotEmpty
-                                ? [
-                              Shadow(
-                                offset: Offset(0, 1),
-                                blurRadius: 1.5,
-                                color: Colors.blue.withOpacity(0.10),
-                              ),
-                            ]
-                                : [],
+                            decoration:
+                            tip.link != null && tip.link!.isNotEmpty ? TextDecoration.underline : null,
                           ),
                         ),
                       ),
-                      if (tip.link != null && tip.link!.trim().isNotEmpty)
+                      if (tip.link != null && tip.link!.isNotEmpty)
                         Padding(
-                          padding: EdgeInsets.only(left: 3, bottom: 1),
-                          child: Icon(Icons.open_in_new, size: 13, color: Colors.blue.withOpacity(0.16)),
+                          padding: EdgeInsets.only(left: 4),
+                          child: Icon(Icons.open_in_new, size: 13),
                         ),
                     ],
                   ),
                 ),
               ),
             ),
-          if (tip.link != null && tip.link!.trim().isNotEmpty && tip.showLink)
+          if (tip.link != null && tip.link!.isNotEmpty && tip.showLink)
             Padding(
               padding: const EdgeInsets.only(top: 12.0),
               child: LinkPreviewGenerator(
-                key: ValueKey(tip.link),
                 link: tip.link!,
                 linkPreviewStyle: LinkPreviewStyle.small,
                 bodyMaxLines: 2,
                 showDomain: true,
-                backgroundColor: Colors.green[50] ?? Colors.white,
+                backgroundColor: Colors.green[50]!,
                 borderRadius: 8,
-                cacheDuration: const Duration(days: 7),
+                cacheDuration: Duration(days: 7),
               ),
             ),
         ],
       ),
     );
 
-    if (tip.link != null && tip.link!.trim().isNotEmpty && (tip.isImage || tip.content.trim().isNotEmpty)) {
-      return Tooltip(
-        message: 'Clique para abrir o link',
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          child: GestureDetector(
-            onTap: () => _openUrl(tip.link!),
-            child: scrollableContent,
-          ),
-        ),
-      );
-    }
-
-    return scrollableContent;
+    return tip.link != null && tip.link!.isNotEmpty
+        ? GestureDetector(onTap: () => _openUrl(tip.link!), child: content)
+        : content;
   }
 
   @override
   Widget build(BuildContext context) {
-    final tip = tips.isNotEmpty ? tips[currentIndex] : null;
+    final tipList = visibleTips;
+    final tip = tipList.isNotEmpty && currentIndex < tipList.length ? tipList[currentIndex] : null;
     final themeManager = Provider.of<ThemeManager>(context);
 
     return Scaffold(
       extendBodyBehindAppBar: false,
       backgroundColor: themeManager.themeData.scaffoldBackgroundColor,
-      body: Stack(
-        children: [
-          Center(
-            child: tip == null
-                ? Text('Nenhuma dica cadastrada.')
-                : ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
-              child: _tipContent(tip),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        actions: [
+          Tooltip(
+            message: slideshowActive ? 'Parar Slideshow' : 'Iniciar Slideshow',
+            child: IconButton(
+              icon: Icon(slideshowActive ? Icons.pause : Icons.play_arrow),
+              onPressed: slideshowActive ? _stopSlideshow : _startSlideshow,
             ),
           ),
-          Positioned(
-            top: 8,
-            right: 8,
-            child: PopupMenuButton<String>(
-              icon: Icon(Icons.menu, color: Theme.of(context).iconTheme.color),
-              tooltip: 'Menu e Configurações',
-              onSelected: (value) {
-                switch (value) {
-                  case 'toggleTop':
-                    _toggleAlwaysOnTop();
-                    break;
-                  case 'slideshow':
-                    slideshowActive ? _stopSlideshow() : _startSlideshow();
-                    break;
-                  case 'settings':
-                    Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => SettingsPage()),
-                    );
-                    break;
-                }
-                if (value.startsWith('theme_')) {
-                  final selected = AppThemeType.values.firstWhere(
-                        (t) => 'theme_${t.name}' == value,
-                  );
-                  Provider.of<ThemeManager>(context, listen: false).setTheme(selected);
-                }
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'toggleTop',
-                  child: Text(isAlwaysOnTop ? 'Desafixar Janela' : 'Fixar Janela'),
-                ),
-                PopupMenuItem(
-                  value: 'slideshow',
-                  child: Text(slideshowActive ? 'Parar Slideshow' : 'Iniciar Slideshow'),
-                ),
-                PopupMenuItem(
-                  enabled: false,
-                  child: Row(
-                    children: [
-                      Text('Intervalo: '),
-                      SizedBox(
-                        width: 40,
-                        child: TextFormField(
-                          initialValue: slideshowInterval.toString(),
-                          keyboardType: TextInputType.number,
-                          onFieldSubmitted: (v) {
-                            final x = int.tryParse(v) ?? 30;
-                            slideshowInterval = x;
-                            setState(() {});
-                            Navigator.pop(context);
-                          },
-                        ),
-                      ),
-                      Text('s'),
-                    ],
-                  ),
-                ),
-                PopupMenuDivider(),
-                PopupMenuItem(
-                  enabled: false,
-                  child: Text('Tema'),
-                ),
-                ...AppThemeType.values.map((theme) => PopupMenuItem<String>(
-                  value: 'theme_${theme.name}',
-                  child: Text(_themeLabel(theme)),
-                )),
-                PopupMenuDivider(),
-                PopupMenuItem(
-                  value: 'settings',
-                  child: Text('Sobre o App'),
-                ),
-              ],
+          Tooltip(
+            message: isAlwaysOnTop
+                ? 'Desafixar janela'
+                : 'Fixar janela no topo',
+            child: IconButton(
+              icon: Icon(
+                isAlwaysOnTop ? Icons.push_pin : Icons.push_pin_outlined,
+                color: isAlwaysOnTop ? Colors.orange : null,
+              ),
+              onPressed: _toggleAlwaysOnTop,
             ),
+          ),
+          PopupMenuButton<String>(
+            icon: Icon(Icons.menu),
+            tooltip: 'Menu e Configurações',
+            onSelected: (value) {
+              if (value == 'settings') {
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsPage()));
+              } else if (value.startsWith('theme_')) {
+                final selected = AppThemeType.values.firstWhere((t) => 'theme_${t.name}' == value);
+                Provider.of<ThemeManager>(context, listen: false).setTheme(selected);
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem( enabled: false, child: Row(children: [Text('Intervalo:'), SizedBox(width: 8), SizedBox(width: 40, child: TextFormField(initialValue: slideshowInterval.toString(), keyboardType: TextInputType.number, onFieldSubmitted: (v) { slideshowInterval = int.tryParse(v) ?? 30; setState(() {}); Navigator.pop(context); },)), Text('s') ]) ),
+              PopupMenuDivider(),
+              PopupMenuItem(enabled: false, child: Text('Tema')),
+              ...AppThemeType.values.map((t) => PopupMenuItem<String>( value: 'theme_${t.name}', child: Text(_themeLabel(t)), )),
+              PopupMenuDivider(),
+              PopupMenuItem(value: 'settings', child: Text('Sobre o App')),
+            ],
           ),
         ],
       ),
-      bottomNavigationBar: tips.isEmpty
-          ? null
-          : BottomAppBar(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            IconButton(
-              icon: Icon(Icons.arrow_back),
-              onPressed: _prevTip,
-            ),
-            Text('${currentIndex + 1}/${tips.length}'),
-            IconButton(
-              icon: Icon(Icons.arrow_forward),
-              onPressed: _nextTip,
-            ),
-            IconButton(
-              icon: Icon(Icons.edit),
-              onPressed: () => _addOrEditTip(tip, currentIndex),
-            ),
-            IconButton(
-              icon: Icon(Icons.delete),
-              onPressed: () => _deleteTip(currentIndex),
-            ),
-          ],
+      body: Center(
+        child: tip == null
+            ? EmptyTipsPlaceholder()
+            : ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+          child: _tipContent(tip),
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: themeManager.themeData.floatingActionButtonTheme.backgroundColor,
-        child: Icon(Icons.add),
-        tooltip: 'Nova Dica',
-        onPressed: () => _addOrEditTip(),
+      bottomNavigationBar: tipList.isEmpty
+          ? null
+          : SizedBox(
+        height: kToolbarHeight * 1, // metade da altura padrão (56/2 = 28)
+        child: BottomAppBar(
+          child: Row(
+            children: [
+              // Metade esquerda: dois botões sem função
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.filter_list, size: 20, color: Colors.grey[600]),
+                      onPressed: () {}, // placeholder
+                      tooltip: 'Filtrar',
+                      splashRadius: 20,
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints.tight(Size(36, 36)),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.grid_view, size: 20, color: Colors.grey[600]),
+                      onPressed: () {}, // placeholder
+                      tooltip: 'Galeria',
+                      splashRadius: 20,
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints.tight(Size(36, 36)),
+                    ),
+                  ],
+                ),
+              ),
+              // Metade direita: navegação entre dicas
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.arrow_back, size: 20),
+                      onPressed: _prevTip,
+                      tooltip: 'Anterior',
+                      splashRadius: 20,
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints.tight(Size(36, 36)),
+                    ),
+                    Text(
+                      '${tipList.isEmpty ? 0 : currentIndex + 1}/${tipList.length}',
+                      style: TextStyle(fontSize: 14),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.arrow_forward, size: 20),
+                      onPressed: _nextTip,
+                      tooltip: 'Próxima',
+                      splashRadius: 20,
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints.tight(Size(36, 36)),
+                    ),
+                    PopupMenuButton<String>(
+                      icon: Icon(Icons.more_vert, size: 20),
+                      tooltip: 'Abrir Opções',
+                      onSelected: (value) {
+                        switch (value) {
+                          case 'nova':
+                            _addOrEditTip();
+                            break;
+                          case 'editar dica atual':
+                            if (tipList.isNotEmpty) _addOrEditTip(tips[currentIndex], currentIndex);
+                            break;
+                          case 'gerenciar':
+                            _openTipGallery();
+                            break;
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        PopupMenuItem(value: 'nova', child: Text('ADD Nova Dica')),
+                        PopupMenuItem(value: 'editar', child: Text('Editar')),
+                        PopupMenuItem(value: 'gerenciar', child: Text('Gerenciar Dicas')),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

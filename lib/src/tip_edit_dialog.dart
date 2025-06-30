@@ -110,6 +110,7 @@ class _TipEditDialogState extends State<TipEditDialog> {
           onPressed: () {
             final tip = TipModel(
               content: contentCtrl.text,
+              isImage: imagePath != null && imagePath!.isNotEmpty,
               imagePath: imagePath,
               link: linkCtrl.text.trim().isEmpty ? null : linkCtrl.text.trim(),
               showLink: showLink,
