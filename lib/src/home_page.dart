@@ -1,4 +1,4 @@
-import 'dart:async';
+wipimport 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:link_preview_generator/link_preview_generator.dart';
 import 'package:provider/provider.dart';
+import 'widgets/snap_window_manager_button.dart';
+
 
 import 'tip_model.dart';
 import 'tip_storage.dart';
@@ -436,7 +438,7 @@ Add-Type -AssemblyName System.Drawing;
                 showDomain: true,
                 backgroundColor: Colors.green[50]!,
                 borderRadius: 8,
-                cacheDuration: Duration(days: 7),
+                cacheDuration: Duration(days: 90),
               ),
             ),
         ],
@@ -505,21 +507,21 @@ Add-Type -AssemblyName System.Drawing;
                         constraints: BoxConstraints.tight(Size(36, 36)),
                       ),
                     ),
-                    Tooltip(
-                      message: isAlwaysOnTop
-                          ? 'Desafixar janela'
-                          : 'Fixar janela no topo',
-                      child: IconButton(
-                        icon: Icon(
-                          isAlwaysOnTop ? Icons.push_pin : Icons.push_pin_outlined,
-                          color: isAlwaysOnTop ? Colors.orange : Colors.white,
-                        ),
-                        onPressed: _toggleAlwaysOnTop,
-                        splashRadius: 20,
-                        padding: EdgeInsets.zero,
-                        constraints: BoxConstraints.tight(Size(36, 36)),
-                      ),
-                    ),
+                    //Tooltip(
+                      //message: isAlwaysOnTop
+                       //   ? 'Desafixar janela'
+                        //  : 'Fixar janela no topo',
+                      //child: IconButton(
+                        //icon: Icon(
+                          //isAlwaysOnTop ? Icons.push_pin : Icons.push_pin_outlined,
+                          //color: isAlwaysOnTop ? Colors.orange : Colors.white,
+                        //),
+                        //onPressed: _toggleAlwaysOnTop,
+                        //splashRadius: 20,
+                        //padding: EdgeInsets.zero,
+                        //constraints: BoxConstraints.tight(Size(36, 36)),
+                      //),
+                    //),
                     PopupMenuButton<String>(
                       icon: Icon(Icons.menu, color: Colors.white),
                       tooltip: 'Menu e Configurações',
@@ -603,7 +605,7 @@ Add-Type -AssemblyName System.Drawing;
                   children: [
                     IconButton(
                       icon: Icon(Icons.filter_list,
-                          size: 20, color: Colors.grey[600]),
+                          size: 14, color: Colors.grey[600]),
                       onPressed: () {},
                       tooltip: 'Filtrar',
                       splashRadius: 20,
@@ -624,19 +626,19 @@ Add-Type -AssemblyName System.Drawing;
                           File(_savedExeIconPath!).existsSync()
                           ? ImageIcon(
                         FileImage(File(_savedExeIconPath!)),
-                        size: 20,
+                        size: 14,
                       )
-                          : Icon(Icons.apps, size: 20),
+                          : Icon(Icons.apps, size: 14),
                       tooltip: _savedExePath ?? 'Selecionar Aplicativo',
                       onPressed: _openExeOrPick,
                       onLongPress: _pickExe,
                       splashRadius: 20,
                       padding: EdgeInsets.zero,
-                      constraints: BoxConstraints.tight(Size(36, 36)),
+                      constraints: BoxConstraints.tight(Size(16, 16)),
                     ),
                     IconButton(
                       icon: Icon(Icons.grid_view,
-                          size: 20, color: Colors.grey[600]),
+                          size: 14, color: Colors.grey[600]),
                       onPressed: _openTipGallery,
                       tooltip: 'Galeria',
                       splashRadius: 20,
@@ -652,27 +654,27 @@ Add-Type -AssemblyName System.Drawing;
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     IconButton(
-                      icon: Icon(Icons.arrow_back, size: 20),
+                      icon: Icon(Icons.arrow_back, size: 14),
                       onPressed: _prevTip,
                       tooltip: 'Anterior',
                       splashRadius: 20,
                       padding: EdgeInsets.zero,
-                      constraints: BoxConstraints.tight(Size(36, 36)),
+                      constraints: BoxConstraints.tight(Size(25, 14)),
                     ),
                     Text(
                       '${tipList.isEmpty ? 0 : currentIndex + 1}/${tipList.length}',
                       style: TextStyle(fontSize: 14),
                     ),
                     IconButton(
-                      icon: Icon(Icons.arrow_forward, size: 20),
+                      icon: Icon(Icons.arrow_forward, size: 14),
                       onPressed: _nextTip,
                       tooltip: 'Próxima',
                       splashRadius: 20,
                       padding: EdgeInsets.zero,
-                      constraints: BoxConstraints.tight(Size(36, 36)),
+                      constraints: BoxConstraints.tight(Size(25, 14)),
                     ),
                     PopupMenuButton<String>(
-                      icon: Icon(Icons.more_vert, size: 20),
+                      icon: Icon(Icons.more_vert, size: 14),
                       tooltip: 'Abrir Opções',
                       onSelected: (value) {
                         switch (value) {

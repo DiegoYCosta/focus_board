@@ -109,6 +109,19 @@ class _TipGalleryDialogState extends State<TipGalleryDialog> {
     }
   }
 
+  Future<void> _editTip(int idx) async {
+    final editedTip = await showDialog<TipModel>(
+      context: context,
+      builder: (_) => TipEditDialog(tip: widget.tips[idx]),
+    );
+    if (editedTip != null) {
+      setState(() {
+        widget.tips[idx] = editedTip;
+      });
+      await TipStorage.saveTips(widget.tips);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isEmpty = widget.tips.isEmpty;
@@ -154,7 +167,7 @@ class _TipGalleryDialogState extends State<TipGalleryDialog> {
                       style: TextStyle(fontSize: 16, color: Colors.black45),
                     ),
                   )
-                      : DraggableTipGrid(
+                  : DraggableTipGrid(
                     tips: widget.tips,
                     selectedIndexes: localSelection,
                     onSelectionChanged: (sel) {
@@ -163,9 +176,10 @@ class _TipGalleryDialogState extends State<TipGalleryDialog> {
                         widget.onSelectionChanged(localSelection);
                       });
                     },
-                    onEdit: (idx) => widget.onEdit(idx),
+                    onEdit: _editTip,
                     scrollController: _scrollController,
                   ),
+                  
                 ),
                 // BOTÃO LIMPAR CACHE
                 Align(
