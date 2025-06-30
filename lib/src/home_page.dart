@@ -1,12 +1,18 @@
 import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
-import 'tip_model.dart';
-import 'tip_storage.dart';
-import 'tip_edit_dialog.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:link_preview_generator/link_preview_generator.dart';
 import 'package:provider/provider.dart';
+
+import 'tip_model.dart';
+import 'tip_storage.dart';
+import 'tip_edit_dialog.dart';
 import 'theme_manager.dart';
 import 'settings_page.dart';
 import 'widgets/empty_tips_placeholder.dart';
@@ -23,11 +29,43 @@ class _HomePageState extends State<HomePage> with WindowListener {
   List<TipModel> tips = [];
   int currentIndex = 0;
   bool slideshowActive = false;
-  int slideshowInterval = 30;
+  int slideshowInterval = 20;
   Timer? slideshowTimer;
   bool _isHovering = false;
 
+  /// Extrai e salva o ícone do .exe em exe_icon.ico
+  Future<String?> _extractExeIcon(String exePath) async {
+    final dir = await getApplicationSupportDirectory();
+    final iconFile = File('${dir.path}/exe_icon.ico');
+    if (await iconFile.exists()) await iconFile.delete();
+
+    final psArgs = [
+      '-NoProfile',
+      '-Command',
+      """
+Add-Type -AssemblyName System.Drawing;
+\$icon = [System.Drawing.Icon]::ExtractAssociatedIcon('${exePath.replaceAll(r"'", "''")}');
+\$fs = [System.IO.File]::Open('${iconFile.path.replaceAll(r"'", "''")}', 'Create');
+\$icon.Save(\$fs);
+\$fs.Close();
+"""
+    ];
+
+    final proc = await Process.run('powershell', psArgs);
+    if (proc.exitCode == 0 && await iconFile.exists()) {
+      return iconFile.path;
+    } else {
+      print('Erro extraindo ícone: ${proc.stderr}');
+      return null;
+    }
+  }
+
+
   Set<int> selectedIndexes = {};
+
+  String? _savedFolderPath;
+  String? _savedExePath;
+  String? _savedExeIconPath;
 
   List<TipModel> get visibleTips {
     if (selectedIndexes.isEmpty) return tips;
@@ -42,6 +80,104 @@ class _HomePageState extends State<HomePage> with WindowListener {
     super.initState();
     windowManager.addListener(this);
     _loadTips();
+    _loadSlideshowInterval();
+    _loadSavedPaths();
+  }
+
+  Future<void> _loadSavedPaths() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _savedFolderPath = prefs.getString('default_folder');
+      _savedExePath = prefs.getString('default_exe');
+      _savedExeIconPath = prefs.getString('default_exe_icon');
+    });
+  }
+
+  // --- Pasta ---
+  Future<void> _pickFolder() async {
+    final path = await FilePicker.platform.getDirectoryPath();
+    if (path != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('default_folder', path);
+      setState(() => _savedFolderPath = path);
+    }
+  }
+
+  Future<void> _openFolderOrPick() async {
+    if (_savedFolderPath != null && Directory(_savedFolderPath!).existsSync()) {
+      await Process.start('explorer.exe', [_savedFolderPath!]);
+    } else {
+      await _pickFolder();
+    }
+  }
+
+  // --- EXE ---
+  Future<void> _openExeOrPick() async {
+    if (_savedExePath != null && File(_savedExePath!).existsSync()) {
+      try {
+        // tenta abrir direto
+        await Process.start(_savedExePath!, []);
+      } on ProcessException catch (e) {
+        if (e.message.contains('requer elevação') ||
+            e.message.contains('requires elevation')) {
+          await Process.start('powershell', [
+            '-NoProfile',
+            '-Command',
+            "Start-Process '${_savedExePath!.replaceAll("'", "''")}' -Verb runAs"
+          ]);
+        } else {
+          rethrow;
+        }
+      }
+    } else {
+      await _pickExe();
+    }
+  }
+
+  Future<void> _deleteOldExeIcon() async {
+    final prefs = await SharedPreferences.getInstance();
+    final old = prefs.getString('default_exe_icon');
+    if (old != null) {
+      final f = File(old);
+      if (await f.exists()) await f.delete();
+      await prefs.remove('default_exe_icon');
+    }
+    setState(() => _savedExeIconPath = null);
+  }
+
+  Future<void> _pickExe() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['exe'],
+    );
+    final filePath = result?.files.single.path;
+    if (filePath != null) {
+      await _deleteOldExeIcon();
+      final iconPath = await _extractExeIcon(filePath);
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('default_exe', filePath);
+      if (iconPath != null) {
+        await prefs.setString('default_exe_icon', iconPath);
+        setState(() {
+          _savedExePath = filePath;
+          _savedExeIconPath = iconPath;
+        });
+      } else {
+        setState(() {
+          _savedExePath = filePath;
+          _savedExeIconPath = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadSlideshowInterval() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getInt('slideshowInterval');
+    if (saved != null && saved > 0) {
+      setState(() => slideshowInterval = saved);
+    }
   }
 
   @override
@@ -85,26 +221,25 @@ class _HomePageState extends State<HomePage> with WindowListener {
 
   void _openTipGallery() async {
     final Set<int> initialSelection = selectedIndexes.isEmpty
-        ? Set.from(List.generate(tips.length, (i) => i))
-        : Set.from(selectedIndexes);
+        ? Set<int>.from(List.generate(tips.length, (i) => i))
+        : Set<int>.from(selectedIndexes);
 
     await showDialog(
       context: context,
       builder: (_) => TipGalleryDialog(
         tips: tips,
         selectedIndexes: initialSelection,
-        onEdit: (idx) async {
-          Navigator.pop(context);
-          await _addOrEditTip(tips[idx], idx);
-        },
-        onSelectionChanged: (newSelection) {
+        onEdit: (idx) async => await _addOrEditTip(tips[idx], idx),
+        onSelectionChanged: (sel) {
           setState(() {
-            selectedIndexes = newSelection;
+            selectedIndexes = sel;
             currentIndex = 0;
           });
         },
+        onCacheCleared: _loadSavedPaths,
       ),
     );
+    await _loadSavedPaths();
     setState(() {});
   }
 
@@ -127,10 +262,8 @@ class _HomePageState extends State<HomePage> with WindowListener {
     setState(() {
       currentIndex = 0;
     });
-    slideshowTimer = Timer.periodic(
-      Duration(seconds: slideshowInterval),
-          (_) => _nextTip(),
-    );
+    slideshowTimer =
+        Timer.periodic(Duration(seconds: slideshowInterval), (_) => _nextTip());
   }
 
   void _stopSlideshow() {
@@ -191,22 +324,56 @@ class _HomePageState extends State<HomePage> with WindowListener {
             Stack(
               alignment: Alignment.topRight,
               children: [
-                AnimatedContainer(
-                  duration: Duration(milliseconds: 120),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    border: _isHovering && tip.link != null && tip.link!.isNotEmpty
-                        ? Border.all(color: Colors.blue.withOpacity(0.12), width: 1)
-                        : null,
+                Padding(
+                  padding: EdgeInsets.all(4),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.of(context).size.width * 0.9,
+                      maxHeight: MediaQuery.of(context).size.height * 0.6,
+                    ),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Stack(
+                          children: [
+                            Image.file(
+                              tip.getFile()!,
+                              fit: BoxFit.cover,
+                              width: double.infinity,
+                              height: double.infinity,
+                            ),
+                            Positioned.fill(
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                    colors: [
+                                      Colors.transparent,
+                                      Colors.black.withOpacity(0.3),
+                                    ],
+                                    stops: [0.6, 1.0],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                  child: Image.file(tip.getFile()!),
                 ),
                 if (tip.link != null && tip.link!.isNotEmpty && tip.content.isEmpty)
                   Padding(
                     padding: EdgeInsets.all(4),
                     child: Tooltip(
                       message: 'Clique para abrir o link',
-                      child: Icon(Icons.open_in_new, size: 15, color: Colors.blue.withOpacity(0.30)),
+                      child: Icon(Icons.open_in_new,
+                          size: 15, color: Colors.blue.withOpacity(0.30)),
                     ),
                   ),
               ],
@@ -220,7 +387,9 @@ class _HomePageState extends State<HomePage> with WindowListener {
               onEnter: (_) => setState(() => _isHovering = true),
               onExit: (_) => setState(() => _isHovering = false),
               child: GestureDetector(
-                onTap: tip.link != null && tip.link!.isNotEmpty ? () => _openUrl(tip.link!) : null,
+                onTap: tip.link != null && tip.link!.isNotEmpty
+                    ? () => _openUrl(tip.link!)
+                    : null,
                 child: AnimatedContainer(
                   duration: Duration(milliseconds: 120),
                   decoration: BoxDecoration(
@@ -241,8 +410,9 @@ class _HomePageState extends State<HomePage> with WindowListener {
                           tip.content,
                           style: TextStyle(
                             fontSize: 18,
-                            decoration:
-                            tip.link != null && tip.link!.isNotEmpty ? TextDecoration.underline : null,
+                            decoration: tip.link != null && tip.link!.isNotEmpty
+                                ? TextDecoration.underline
+                                : null,
                           ),
                         ),
                       ),
@@ -281,88 +451,193 @@ class _HomePageState extends State<HomePage> with WindowListener {
   @override
   Widget build(BuildContext context) {
     final tipList = visibleTips;
-    final tip = tipList.isNotEmpty && currentIndex < tipList.length ? tipList[currentIndex] : null;
+    final tip = tipList.isNotEmpty && currentIndex < tipList.length
+        ? tipList[currentIndex]
+        : null;
     final themeManager = Provider.of<ThemeManager>(context);
 
     return Scaffold(
-      extendBodyBehindAppBar: false,
-      backgroundColor: themeManager.themeData.scaffoldBackgroundColor,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        actions: [
-          Tooltip(
-            message: slideshowActive ? 'Parar Slideshow' : 'Iniciar Slideshow',
-            child: IconButton(
-              icon: Icon(slideshowActive ? Icons.pause : Icons.play_arrow),
-              onPressed: slideshowActive ? _stopSlideshow : _startSlideshow,
-            ),
-          ),
-          Tooltip(
-            message: isAlwaysOnTop
-                ? 'Desafixar janela'
-                : 'Fixar janela no topo',
-            child: IconButton(
-              icon: Icon(
-                isAlwaysOnTop ? Icons.push_pin : Icons.push_pin_outlined,
-                color: isAlwaysOnTop ? Colors.orange : null,
+      extendBodyBehindAppBar: true,
+      body: Stack(
+        children: [
+          // 1) Conteúdo principal
+          Center(
+            child: tip == null
+                ? EmptyTipsPlaceholder()
+                : ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
               ),
-              onPressed: _toggleAlwaysOnTop,
+              child: _tipContent(tip),
             ),
           ),
-          PopupMenuButton<String>(
-            icon: Icon(Icons.menu),
-            tooltip: 'Menu e Configurações',
-            onSelected: (value) {
-              if (value == 'settings') {
-                Navigator.of(context).push(MaterialPageRoute(builder: (_) => SettingsPage()));
-              } else if (value.startsWith('theme_')) {
-                final selected = AppThemeType.values.firstWhere((t) => 'theme_${t.name}' == value);
-                Provider.of<ThemeManager>(context, listen: false).setTheme(selected);
-              }
-            },
-            itemBuilder: (_) => [
-              PopupMenuItem( enabled: false, child: Row(children: [Text('Intervalo:'), SizedBox(width: 8), SizedBox(width: 40, child: TextFormField(initialValue: slideshowInterval.toString(), keyboardType: TextInputType.number, onFieldSubmitted: (v) { slideshowInterval = int.tryParse(v) ?? 30; setState(() {}); Navigator.pop(context); },)), Text('s') ]) ),
-              PopupMenuDivider(),
-              PopupMenuItem(enabled: false, child: Text('Tema')),
-              ...AppThemeType.values.map((t) => PopupMenuItem<String>( value: 'theme_${t.name}', child: Text(_themeLabel(t)), )),
-              PopupMenuDivider(),
-              PopupMenuItem(value: 'settings', child: Text('Sobre o App')),
-            ],
+
+          // 2) Container flutuante com 3 botões
+          Positioned(
+            top: MediaQuery.of(context).viewPadding.top + 8,
+            right: MediaQuery.of(context).viewPadding.right + 8,
+            child: SafeArea(
+              top: false,
+              bottom: false,
+              left: false,
+              right: false,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.25),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Tooltip(
+                      message:
+                      slideshowActive ? 'Parar Slideshow' : 'Iniciar Slideshow',
+                      child: IconButton(
+                        icon: Icon(
+                          slideshowActive ? Icons.pause : Icons.play_arrow,
+                          color: Colors.white,
+                        ),
+                        onPressed:
+                        slideshowActive ? _stopSlideshow : _startSlideshow,
+                        splashRadius: 20,
+                        padding: EdgeInsets.zero,
+                        constraints: BoxConstraints.tight(Size(36, 36)),
+                      ),
+                    ),
+                    Tooltip(
+                      message: isAlwaysOnTop
+                          ? 'Desafixar janela'
+                          : 'Fixar janela no topo',
+                      child: IconButton(
+                        icon: Icon(
+                          isAlwaysOnTop ? Icons.push_pin : Icons.push_pin_outlined,
+                          color: isAlwaysOnTop ? Colors.orange : Colors.white,
+                        ),
+                        onPressed: _toggleAlwaysOnTop,
+                        splashRadius: 20,
+                        padding: EdgeInsets.zero,
+                        constraints: BoxConstraints.tight(Size(36, 36)),
+                      ),
+                    ),
+                    PopupMenuButton<String>(
+                      icon: Icon(Icons.menu, color: Colors.white),
+                      tooltip: 'Menu e Configurações',
+                      onSelected: (value) {
+                        if (value == 'settings') {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (_) => SettingsPage()),
+                          );
+                        } else if (value.startsWith('theme_')) {
+                          final selected = AppThemeType.values.firstWhere(
+                                  (t) => 'theme_${t.name}' == value);
+                          Provider.of<ThemeManager>(context, listen: false)
+                              .setTheme(selected);
+                        }
+                      },
+                      itemBuilder: (_) => [
+                        PopupMenuItem(
+                          enabled: false,
+                          child: Row(
+                            children: [
+                              Text('Intervalo:'),
+                              SizedBox(width: 8),
+                              SizedBox(
+                                width: 40,
+                                child: TextFormField(
+                                  initialValue: slideshowInterval.toString(),
+                                  keyboardType: TextInputType.number,
+                                  onFieldSubmitted: (v) async {
+                                    final newInterval =
+                                        int.tryParse(v) ?? slideshowInterval;
+                                    final prefs =
+                                    await SharedPreferences.getInstance();
+                                    await prefs.setInt(
+                                        'slideshowInterval', newInterval);
+                                    setState(() {
+                                      slideshowInterval = newInterval;
+                                      if (slideshowActive) {
+                                        slideshowTimer?.cancel();
+                                        slideshowTimer = Timer.periodic(
+                                          Duration(seconds: slideshowInterval),
+                                              (_) => _nextTip(),
+                                        );
+                                      }
+                                    });
+                                    Navigator.pop(context);
+                                  },
+                                ),
+                              ),
+                              Text('s'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuDivider(),
+                        PopupMenuItem(enabled: false, child: Text('Tema')),
+                        ...AppThemeType.values.map((t) => PopupMenuItem<String>(
+                          value: 'theme_${t.name}',
+                          child: Text(_themeLabel(t)),
+                        )),
+                        PopupMenuDivider(),
+                        PopupMenuItem(value: 'settings', child: Text('Sobre o App')),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
-      ),
-      body: Center(
-        child: tip == null
-            ? EmptyTipsPlaceholder()
-            : ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
-          child: _tipContent(tip),
-        ),
       ),
       bottomNavigationBar: tipList.isEmpty
           ? null
           : SizedBox(
-        height: kToolbarHeight * 1, // metade da altura padrão (56/2 = 28)
+        height: kToolbarHeight,
         child: BottomAppBar(
           child: Row(
             children: [
-              // Metade esquerda: dois botões sem função
+              // Lado esquerdo
               Expanded(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     IconButton(
-                      icon: Icon(Icons.filter_list, size: 20, color: Colors.grey[600]),
-                      onPressed: () {}, // placeholder
+                      icon: Icon(Icons.filter_list,
+                          size: 20, color: Colors.grey[600]),
+                      onPressed: () {},
                       tooltip: 'Filtrar',
                       splashRadius: 20,
                       padding: EdgeInsets.zero,
                       constraints: BoxConstraints.tight(Size(36, 36)),
                     ),
                     IconButton(
-                      icon: Icon(Icons.grid_view, size: 20, color: Colors.grey[600]),
-                      onPressed: () {}, // placeholder
+                      icon: Icon(Icons.folder),
+                      tooltip: _savedFolderPath ?? 'Selecionar Pasta',
+                      onPressed: _openFolderOrPick,
+                      onLongPress: _pickFolder,
+                      splashRadius: 20,
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints.tight(Size(36, 36)),
+                    ),
+                    IconButton(
+                      icon: _savedExeIconPath != null &&
+                          File(_savedExeIconPath!).existsSync()
+                          ? ImageIcon(
+                        FileImage(File(_savedExeIconPath!)),
+                        size: 20,
+                      )
+                          : Icon(Icons.apps, size: 20),
+                      tooltip: _savedExePath ?? 'Selecionar Aplicativo',
+                      onPressed: _openExeOrPick,
+                      onLongPress: _pickExe,
+                      splashRadius: 20,
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints.tight(Size(36, 36)),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.grid_view,
+                          size: 20, color: Colors.grey[600]),
+                      onPressed: _openTipGallery,
                       tooltip: 'Galeria',
                       splashRadius: 20,
                       padding: EdgeInsets.zero,
@@ -371,7 +646,7 @@ class _HomePageState extends State<HomePage> with WindowListener {
                   ],
                 ),
               ),
-              // Metade direita: navegação entre dicas
+              // Lado direito
               Expanded(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -404,8 +679,10 @@ class _HomePageState extends State<HomePage> with WindowListener {
                           case 'nova':
                             _addOrEditTip();
                             break;
-                          case 'editar dica atual':
-                            if (tipList.isNotEmpty) _addOrEditTip(tips[currentIndex], currentIndex);
+                          case 'editar':
+                            if (tipList.isNotEmpty)
+                              _addOrEditTip(
+                                  tips[currentIndex], currentIndex);
                             break;
                           case 'gerenciar':
                             _openTipGallery();
@@ -413,9 +690,13 @@ class _HomePageState extends State<HomePage> with WindowListener {
                         }
                       },
                       itemBuilder: (_) => [
-                        PopupMenuItem(value: 'nova', child: Text('ADD Nova Dica')),
-                        PopupMenuItem(value: 'editar', child: Text('Editar')),
-                        PopupMenuItem(value: 'gerenciar', child: Text('Gerenciar Dicas')),
+                        PopupMenuItem(
+                            value: 'nova', child: Text('Adicionar Janela')),
+                        PopupMenuItem(
+                            value: 'editar', child: Text('Editar')),
+                        PopupMenuItem(
+                            value: 'gerenciar',
+                            child: Text('Gerenciar Janelas')),
                       ],
                     ),
                   ],
