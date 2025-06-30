@@ -14,13 +14,17 @@ class TipEditDialog extends StatefulWidget {
 
 class _TipEditDialogState extends State<TipEditDialog> {
   TextEditingController contentCtrl = TextEditingController();
+  TextEditingController linkCtrl = TextEditingController();
   String? imagePath;
+  bool showLink = false; // Novo campo
 
   @override
   void initState() {
     super.initState();
     contentCtrl.text = widget.tip?.content ?? '';
+    linkCtrl.text = widget.tip?.link ?? '';
     imagePath = widget.tip?.imagePath;
+    showLink = widget.tip?.showLink ?? false;
   }
 
   void pickImage() async {
@@ -52,6 +56,25 @@ class _TipEditDialogState extends State<TipEditDialog> {
               controller: contentCtrl,
               maxLines: 3,
               decoration: InputDecoration(labelText: 'Texto da Dica'),
+            ),
+            SizedBox(height: 8),
+            TextField(
+              controller: linkCtrl,
+              decoration: InputDecoration(
+                labelText: 'Link (opcional)',
+                hintText: 'https://...',
+              ),
+            ),
+            Row(
+              children: [
+                Checkbox(
+                  value: showLink,
+                  onChanged: (v) => setState(() => showLink = v ?? false),
+                ),
+                Expanded(
+                  child: Text("Mostrar o link ao final"),
+                ),
+              ],
             ),
             SizedBox(height: 16),
             if (imagePath != null)
@@ -88,6 +111,8 @@ class _TipEditDialogState extends State<TipEditDialog> {
             final tip = TipModel(
               content: contentCtrl.text,
               imagePath: imagePath,
+              link: linkCtrl.text.trim().isEmpty ? null : linkCtrl.text.trim(),
+              showLink: showLink,
             );
             Navigator.pop(context, tip);
           },

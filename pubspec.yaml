@@ -36,6 +36,8 @@ dependencies:
   sqflite: ^2.4.2                   # Banco de dados local
   image_picker: ^1.1.2              # Alternativo para imagens locais
   provider: ^6.1.2            # Para gerenciamento de estado simples
+  url_launcher: ^6.2.5        # Para mostrar e gerenciar de links
+  link_preview_generator: ^1.2.0
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

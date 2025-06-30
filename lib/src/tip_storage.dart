@@ -14,9 +14,10 @@ class TipStorage {
       final file = File(await _filePath);
       if (!await file.exists()) return [];
       final jsonStr = await file.readAsString();
-      final list = (jsonDecode(jsonStr) as List)
-          .map((e) => TipModel.fromJson(e))
-          .toList();
+      final list = (jsonDecode(jsonStr) as List).map((e) {
+        print('Carregando tip: ${e['content']} | showLink: ${e['showLink']}');
+        return TipModel.fromJson(e);
+      }).toList();
       return list;
     } catch (e) {
       return [];

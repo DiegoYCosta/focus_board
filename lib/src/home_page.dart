@@ -4,6 +4,8 @@ import 'package:window_manager/window_manager.dart';
 import 'tip_model.dart';
 import 'tip_storage.dart';
 import 'tip_edit_dialog.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:link_preview_generator/link_preview_generator.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -17,6 +19,8 @@ class _HomePageState extends State<HomePage> with WindowListener {
   bool slideshowActive = false;
   int slideshowInterval = 30; // segundos
   Timer? slideshowTimer;
+
+  bool _isHovering = false;
 
   @override
   void initState() {
@@ -44,6 +48,13 @@ class _HomePageState extends State<HomePage> with WindowListener {
     isAlwaysOnTop = !isAlwaysOnTop;
     await windowManager.setAlwaysOnTop(isAlwaysOnTop);
     setState(() {});
+  }
+
+  void _openUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri != null && await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
   }
 
   void _startSlideshow() {
@@ -98,6 +109,153 @@ class _HomePageState extends State<HomePage> with WindowListener {
     await TipStorage.saveTips(tips);
     if (currentIndex >= tips.length) currentIndex = 0;
     setState(() {});
+  }
+
+  Widget _tipContent(TipModel tip) {
+    // Caso só haja link (sem texto e sem imagem), exibe link destacado
+    if ((tip.content.trim().isEmpty && !tip.isImage) &&
+        (tip.link != null && tip.link!.trim().isNotEmpty)) {
+      return InkWell(
+        onTap: () => _openUrl(tip.link!),
+        child: Text(
+          tip.link!,
+          style: TextStyle(
+            fontSize: 20,
+            color: Colors.blue,
+            decoration: TextDecoration.underline,
+          ),
+        ),
+      );
+    }
+
+    // Conteúdo principal (imagem, texto, ícone sutil)
+    Widget content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (tip.isImage)
+          Stack(
+            alignment: Alignment.topRight,
+            children: [
+              AnimatedContainer(
+                duration: Duration(milliseconds: 120),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: _isHovering && tip.link != null && tip.link!.trim().isNotEmpty
+                      ? Border.all(color: Colors.blue.withOpacity(0.12), width: 1)
+                      : null,
+                ),
+                child: Image.file(
+                  tip.getFile()!,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              if (tip.link != null && tip.link!.trim().isNotEmpty)
+                Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Tooltip(
+                    message: 'Clique para abrir o link',
+                    child: Icon(
+                      Icons.open_in_new,
+                      size: 15,
+                      color: Colors.blue.withOpacity(0.30),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        if (tip.isImage && tip.content.trim().isNotEmpty)
+          SizedBox(height: 16),
+        if (tip.content.trim().isNotEmpty)
+          MouseRegion(
+            cursor: tip.link != null && tip.link!.trim().isNotEmpty
+                ? SystemMouseCursors.click
+                : SystemMouseCursors.basic,
+            onEnter: (_) => setState(() => _isHovering = true),
+            onExit: (_) => setState(() => _isHovering = false),
+            child: GestureDetector(
+              onTap: tip.link != null && tip.link!.trim().isNotEmpty
+                  ? () => _openUrl(tip.link!)
+                  : null,
+              child: AnimatedContainer(
+                duration: Duration(milliseconds: 120),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  border: _isHovering && tip.link != null && tip.link!.trim().isNotEmpty
+                      ? Border.all(color: Colors.blue.withOpacity(0.13), width: 1)
+                      : null,
+                  color: _isHovering && tip.link != null && tip.link!.trim().isNotEmpty
+                      ? Colors.blue.withOpacity(0.025)
+                      : Colors.transparent,
+                ),
+                padding: EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        tip.content,
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: Colors.black,
+                          decoration: tip.link != null && tip.link!.trim().isNotEmpty
+                              ? TextDecoration.underline
+                              : null,
+                          decorationColor: Colors.blue.withOpacity(0.16),
+                          decorationThickness: 1,
+                          shadows: tip.link != null && tip.link!.trim().isNotEmpty
+                              ? [
+                            Shadow(
+                              offset: Offset(0, 1),
+                              blurRadius: 1.5,
+                              color: Colors.blue.withOpacity(0.10),
+                            ),
+                          ]
+                              : [],
+                        ),
+                      ),
+                    ),
+                    if (tip.link != null && tip.link!.trim().isNotEmpty)
+                      Padding(
+                        padding: EdgeInsets.only(left: 3, bottom: 1),
+                        child: Icon(Icons.open_in_new, size: 13, color: Colors.blue.withOpacity(0.16)),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        // *** EXIBE O CARTÃO DO LINK APENAS UMA VEZ ***
+        if (tip.link != null && tip.link!.trim().isNotEmpty && tip.showLink)
+          Padding(
+            padding: const EdgeInsets.only(top: 12.0),
+            child: LinkPreviewGenerator(
+              key: ValueKey(tip.link), // Força rebuild se mudar o link
+              link: tip.link!,
+              linkPreviewStyle: LinkPreviewStyle.small,
+              bodyMaxLines: 2,
+              showDomain: true,
+              backgroundColor: Colors.green[50] ?? Colors.white,
+              borderRadius: 8,
+              cacheDuration: const Duration(days: 7),
+            ),
+          ),
+      ],
+    );
+
+    // Faz todo o bloco ser clicável se tem link (imagem ou texto)
+    if (tip.link != null && tip.link!.trim().isNotEmpty && (tip.isImage || tip.content.trim().isNotEmpty)) {
+      return InkWell(
+        onTap: () => _openUrl(tip.link!),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: content,
+        ),
+      );
+    }
+
+    return content;
   }
 
   @override
@@ -156,31 +314,7 @@ class _HomePageState extends State<HomePage> with WindowListener {
       body: Center(
         child: tip == null
             ? Text('Nenhuma dica cadastrada.')
-            : Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (tip.isImage)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.file(
-                  tip.getFile()!,
-                  // Remove height fixa, deixa o natural
-                  fit: BoxFit.contain,
-                ),
-              ),
-            if (tip.isImage && tip.content.trim().isNotEmpty)
-              SizedBox(height: 16),
-            if (tip.content.trim().isNotEmpty)
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Text(
-                    tip.content,
-                    style: TextStyle(fontSize: 18),
-                  ),
-                ),
-              ),
-          ],
-        ),
+            : _tipContent(tip),
       ),
       bottomNavigationBar: tips.isEmpty
           ? null
