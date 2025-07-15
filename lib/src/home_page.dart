@@ -1,8 +1,11 @@
+// lib/src/home_page.dart
 import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show Size;
 
 import 'package:flutter/material.dart';
+import 'package:focus_board/src/task_storage.dart';
+import 'package:intl/intl.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -19,6 +22,8 @@ import 'settings_page.dart';
 import 'widgets/empty_tips_placeholder.dart';
 import 'widgets/tip_gallery_dialog.dart';
 import 'widgets/snap_window_manager_button.dart';
+import 'task_section.dart';
+import 'task_model.dart';
 
 class HomePage extends StatefulWidget {
   @override
@@ -32,6 +37,8 @@ class _HomePageState extends State<HomePage> with WindowListener {
   int slideshowInterval = 20;
   Timer? slideshowTimer;
   bool _isHovering = false;
+  bool _showTasks = false;
+  final GlobalKey<TaskSectionState> _taskSectionKey = GlobalKey<TaskSectionState>();
 
   Set<int> selectedIndexes = {};
 
@@ -54,6 +61,15 @@ class _HomePageState extends State<HomePage> with WindowListener {
     _loadTips();
     _loadSlideshowInterval();
     _loadSavedPaths();
+    _initializeWindowSize();
+  }
+
+  Future<void> _initializeWindowSize() async {
+    await windowManager.setMinimumSize(Size(150, 250));
+    final size = await windowManager.getSize();
+    if (size.height < 250) {
+      await windowManager.setSize(Size(size.width, 250));
+    }
   }
 
   Future<void> _loadSavedPaths() async {
@@ -87,8 +103,7 @@ class _HomePageState extends State<HomePage> with WindowListener {
       try {
         await Process.start(_savedExePath!, []);
       } on ProcessException catch (e) {
-        if (e.message.contains('requer elevação') ||
-            e.message.contains('requires elevation')) {
+        if (e.message.contains('requer elevação') || e.message.contains('requires elevation')) {
           await Process.start('powershell', [
             '-NoProfile',
             '-Command',
@@ -251,8 +266,7 @@ Add-Type -AssemblyName System.Drawing;
     setState(() {
       currentIndex = 0;
     });
-    slideshowTimer =
-        Timer.periodic(Duration(seconds: slideshowInterval), (_) => _nextTip());
+    slideshowTimer = Timer.periodic(Duration(seconds: slideshowInterval), (_) => _nextTip());
   }
 
   void _stopSlideshow() {
@@ -304,75 +318,37 @@ Add-Type -AssemblyName System.Drawing;
 
   Widget _buildTipContent(TipModel tip) {
     final file = tip.getFile();
-    final imageWidget = (tip.hasImage && file != null)
-        ? Image.file(
-      file,
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
-    )
-        : Image.asset(
-      'assets/Athenas_Smile.png',
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
-    );
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Stack(
-          alignment: Alignment.topRight,
-          children: [
-            Padding(
-              padding: EdgeInsets.all(4),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: MediaQuery.of(context).size.width * 0.9,
-                  maxHeight: MediaQuery.of(context).size.height * 0.6,
-                ),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Stack(
-                      children: [
-                        imageWidget,
-                        Positioned.fill(
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topCenter,
-                                end: Alignment.bottomCenter,
-                                colors: [
-                                  Colors.transparent,
-                                  Colors.black.withOpacity(0.3),
-                                ],
-                                stops: [0.6, 1.0],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: MediaQuery.of(context).size.width * 0.9,
+            maxHeight: 200.0, // Limite a altura da imagem
+          ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8)],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: (tip.hasImage && file != null)
+                  ? Image.file(
+                file,
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: 200.0, // Altura fixa
+              )
+                  : Image.asset(
+                'assets/Athenas_Smile.png',
+                fit: BoxFit.cover,
+                width: double.infinity,
+                height: 200.0, // Altura fixa
               ),
             ),
-            if (tip != null && (tip.link ?? '').isNotEmpty && tip.content.isEmpty)
-              Padding(
-                padding: EdgeInsets.all(4),
-                child: Tooltip(
-                  message: 'Clique para abrir o link',
-                  child: Icon(Icons.open_in_new,
-                      size: 15, color: Colors.blue.withOpacity(0.30)),
-                ),
-              ),
-          ],
+          ),
         ),
         if (tip.content.isNotEmpty) SizedBox(height: 16),
         if (tip.content.isNotEmpty)
@@ -439,6 +415,15 @@ Add-Type -AssemblyName System.Drawing;
     );
   }
 
+  Future<void> _adjustWindowHeight(bool showTasks) async {
+    final currentSize = await windowManager.getSize();
+    final newHeight = showTasks ? currentSize.height + 300.0 : currentSize.height - 300.0;
+    await windowManager.setSize(Size(currentSize.width, newHeight.clamp(250.0, double.infinity)));
+    setState(() {
+      _showTasks = showTasks;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final tipList = visibleTips;
@@ -449,124 +434,141 @@ Add-Type -AssemblyName System.Drawing;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      body: Stack(
+      body: Column(
         children: [
-// 1) Conteúdo principal
-          Center(
-            child: tip == null
-                ? EmptyTipsPlaceholder()
-                : Container(
-              height: MediaQuery.of(context).size.height * 0.85,
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: EdgeInsets.all(12),
-                  child: _buildTipContent(tip),
+          Expanded(
+            child: Stack(
+              children: [
+                Center(
+                  child: tip == null
+                      ? EmptyTipsPlaceholder()
+                      : Container(
+                    padding: EdgeInsets.all(12),
+                    child: _buildTipContent(tip),
+                  ),
                 ),
-              ),
-            ),
-          ),
-// 2) Container flutuante com botões
-          Positioned(
-            top: MediaQuery.of(context).viewPadding.top + 8,
-            right: MediaQuery.of(context).viewPadding.right + 8,
-            child: SafeArea(
-              top: false,
-              bottom: false,
-              left: false,
-              right: false,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6)],
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Tooltip(
-                      message: slideshowActive ? 'Parar Slideshow' : 'Iniciar Slideshow',
-                      child: IconButton(
-                        icon: Icon(
-                          slideshowActive ? Icons.pause : Icons.play_arrow,
-                          color: Colors.white,
-                        ),
-                        onPressed: slideshowActive ? _stopSlideshow : _startSlideshow,
-                        splashRadius: 20,
-                        padding: EdgeInsets.zero,
-                        constraints: BoxConstraints.tight(Size(36, 36)),
+                Positioned(
+                  top: MediaQuery.of(context).viewPadding.top + 8,
+                  right: MediaQuery.of(context).viewPadding.right + 8,
+                  child: SafeArea(
+                    top: false,
+                    bottom: false,
+                    left: false,
+                    right: false,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 6)],
                       ),
-                    ),
-                    SnapWindowManagerButton(),
-                    PopupMenuButton<String>(
-                      icon: Icon(Icons.menu, color: Colors.white),
-                      tooltip: 'Menu e Configurações',
-                      onSelected: (value) {
-                        if (value == 'settings') {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(builder: (_) => SettingsPage()),
-                          );
-                        } else if (value.startsWith('theme_')) {
-                          final selected = AppThemeType.values.firstWhere(
-                                  (t) => 'theme_${t.name}' == value);
-                          Provider.of<ThemeManager>(context, listen: false)
-                              .setTheme(selected);
-                        }
-                      },
-                      itemBuilder: (_) => [
-                        PopupMenuItem(
-                          enabled: false,
-                          child: Row(
-                            children: [
-                              Text('Intervalo:'),
-                              SizedBox(width: 8),
-                              SizedBox(
-                                width: 40,
-                                child: TextFormField(
-                                  initialValue: slideshowInterval.toString(),
-                                  keyboardType: TextInputType.number,
-                                  onFieldSubmitted: (v) async {
-                                    final newInterval =
-                                        int.tryParse(v) ?? slideshowInterval;
-                                    final prefs =
-                                    await SharedPreferences.getInstance();
-                                    await prefs.setInt(
-                                        'slideshowInterval', newInterval);
-                                    setState(() {
-                                      slideshowInterval = newInterval;
-                                      if (slideshowActive) {
-                                        slideshowTimer?.cancel();
-                                        slideshowTimer = Timer.periodic(
-                                          Duration(seconds: slideshowInterval),
-                                              (_) => _nextTip(),
-                                        );
-                                      }
-                                    });
-                                    Navigator.pop(context);
-                                  },
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Tooltip(
+                            message: slideshowActive ? 'Parar Slideshow' : 'Iniciar Slideshow',
+                            child: IconButton(
+                              icon: Icon(
+                                slideshowActive ? Icons.pause : Icons.play_arrow,
+                                color: Colors.white,
+                              ),
+                              onPressed: slideshowActive ? _stopSlideshow : _startSlideshow,
+                              splashRadius: 20,
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints.tight(Size(36, 36)),
+                            ),
+                          ),
+                          SnapWindowManagerButton(),
+                          PopupMenuButton<String>(
+                            icon: Icon(Icons.menu, color: Colors.white),
+                            tooltip: 'Menu e Configurações',
+                            onSelected: (value) {
+                              if (value == 'settings') {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(builder: (_) => SettingsPage()),
+                                );
+                              } else if (value.startsWith('theme_')) {
+                                final selected = AppThemeType.values.firstWhere(
+                                        (t) => 'theme_${t.name}' == value);
+                                Provider.of<ThemeManager>(context, listen: false)
+                                    .setTheme(selected);
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              PopupMenuItem(
+                                enabled: false,
+                                child: Row(
+                                  children: [
+                                    Text('Intervalo:'),
+                                    SizedBox(width: 8),
+                                    SizedBox(
+                                      width: 40,
+                                      child: TextFormField(
+                                        initialValue: slideshowInterval.toString(),
+                                        keyboardType: TextInputType.number,
+                                        onFieldSubmitted: (v) async {
+                                          final newInterval =
+                                              int.tryParse(v) ?? slideshowInterval;
+                                          final prefs =
+                                          await SharedPreferences.getInstance();
+                                          await prefs.setInt(
+                                              'slideshowInterval', newInterval);
+                                          setState(() {
+                                            slideshowInterval = newInterval;
+                                            if (slideshowActive) {
+                                              slideshowTimer?.cancel();
+                                              slideshowTimer = Timer.periodic(
+                                                Duration(seconds: slideshowInterval),
+                                                    (_) => _nextTip(),
+                                              );
+                                            }
+                                          });
+                                          Navigator.pop(context);
+                                        },
+                                      ),
+                                    ),
+                                    Text('s'),
+                                  ],
                                 ),
                               ),
-                              Text('s'),
+                              PopupMenuDivider(),
+                              PopupMenuItem(enabled: false, child: Text('Tema')),
+                              ...AppThemeType.values.map((t) => PopupMenuItem<String>(
+                                value: 'theme_${t.name}',
+                                child: Text(_themeLabel(t)),
+                              )),
+                              PopupMenuDivider(),
+                              PopupMenuItem(value: 'settings', child: Text('Sobre o App')),
                             ],
                           ),
-                        ),
-                        PopupMenuDivider(),
-                        PopupMenuItem(enabled: false, child: Text('Tema')),
-                        ...AppThemeType.values.map((t) => PopupMenuItem<String>(
-                          value: 'theme_${t.name}',
-                          child: Text(_themeLabel(t)),
-                        )),
-                        PopupMenuDivider(),
-                        PopupMenuItem(value: 'settings', child: Text('Sobre o App')),
-                      ],
+                        ],
+                      ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
+          if (_showTasks) TaskSection(key: _taskSectionKey),
         ],
       ),
+      floatingActionButton: _showTasks
+          ? Semantics(
+        label: 'Adicionar nova tarefa',
+        child: FloatingActionButton(
+          onPressed: () {
+            if (_taskSectionKey.currentState != null) {
+              _taskSectionKey.currentState!.addOrEditTask();
+            } else {
+              print('TaskSection state is null');
+            }
+          },
+          tooltip: 'Adicionar Tarefa',
+          child: Icon(Icons.add),
+          backgroundColor: Colors.blue[700],
+        ),
+      )
+          : null,
       bottomNavigationBar: tipList.isEmpty
           ? null
           : SizedBox(
@@ -574,16 +576,16 @@ Add-Type -AssemblyName System.Drawing;
         child: BottomAppBar(
           child: Row(
             children: [
-// Lado esquerdo
               Expanded(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     IconButton(
-                      icon: Icon(Icons.filter_list,
-                          size: 14, color: Colors.grey[600]),
-                      onPressed: () {}, // TODO: implementar filtro se desejar
-                      tooltip: 'Filtrar',
+                      icon: Icon(Icons.filter_list, size: 14, color: Colors.grey[600]),
+                      onPressed: () async {
+                        await _adjustWindowHeight(!_showTasks);
+                      },
+                      tooltip: 'Mostrar/Ocultar Tarefas',
                       splashRadius: 20,
                       padding: EdgeInsets.zero,
                       constraints: BoxConstraints.tight(Size(36, 36)),
@@ -613,10 +615,56 @@ Add-Type -AssemblyName System.Drawing;
                       constraints: BoxConstraints.tight(Size(16, 16)),
                     ),
                     IconButton(
-                      icon: Icon(Icons.grid_view,
-                          size: 14, color: Colors.grey[600]),
+                      icon: Icon(Icons.grid_view, size: 14, color: Colors.grey[600]),
                       onPressed: _openTipGallery,
                       tooltip: 'Galeria',
+                      splashRadius: 20,
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints.tight(Size(36, 36)),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.history, size: 14, color: Colors.grey[600]),
+                      onPressed: () {
+                        // Implementar diálogo ou navegação para tarefas concluídas/destruídas
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: Text('Tarefas Concluídas/Destruídas'),
+                            content: FutureBuilder<List<TaskModel>>(
+                              future: TaskStorage.loadTasks(),
+                              builder: (context, snapshot) {
+                                if (!snapshot.hasData) return CircularProgressIndicator();
+                                final completedTasks = snapshot.data!
+                                    .where((t) => t.isCompleted || t.isDeleted)
+                                    .toList();
+                                if (completedTasks.isEmpty) {
+                                  return Text('Nenhuma tarefa concluída.');
+                                }
+                                return ListView.builder(
+                                  shrinkWrap: true,
+                                  itemCount: completedTasks.length,
+                                  itemBuilder: (context, index) {
+                                    final task = completedTasks[index];
+                                    return ListTile(
+                                      title: Text(task.title),
+                                      subtitle: task.isCompleted
+                                          ? Text('Concluída em: ${DateFormat('dd/MM/yyyy HH:mm').format(task.completionDate!)}')
+                                          : Text('Destruída'),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: Text('Fechar'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                      tooltip: 'Ver Histórico de Tarefas',
                       splashRadius: 20,
                       padding: EdgeInsets.zero,
                       constraints: BoxConstraints.tight(Size(36, 36)),
@@ -624,7 +672,6 @@ Add-Type -AssemblyName System.Drawing;
                   ],
                 ),
               ),
-// Lado direito
               Expanded(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
