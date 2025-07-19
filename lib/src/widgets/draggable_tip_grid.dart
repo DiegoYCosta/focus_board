@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import '../tip_model.dart';
 import '../tip_storage.dart';
 
-/// Grid arrastável de dicas, com suporte a DragTarget e Draggable/LongPressDraggable
 class DraggableTipGrid extends StatefulWidget {
   final List<TipModel> tips;
   final Set<int> selectedIndexes;
@@ -107,7 +106,7 @@ class _DraggableTipGridState extends State<DraggableTipGrid> {
               await TipStorage.saveTips(widget.tips);
             } catch (e) {
               if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Erro ao salvar ordem: \$e')),
+                SnackBar(content: Text('Erro ao salvar ordem: $e')),
               );
             }
           },
@@ -236,7 +235,7 @@ class _DraggableTipGridState extends State<DraggableTipGrid> {
                   await TipStorage.saveTips(widget.tips);
                 } catch (e) {
                   if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Erro ao excluir: \$e')),
+                    SnackBar(content: Text('Erro ao excluir: $e')),
                   );
                 }
               },
@@ -258,7 +257,7 @@ class _DraggableTipGridState extends State<DraggableTipGrid> {
                   await TipStorage.saveTips(widget.tips);
                 } catch (e) {
                   if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Erro ao duplicar: \$e')),
+                    SnackBar(content: Text('Erro ao duplicar: $e')),
                   );
                 }
                 _scrollToEnd();

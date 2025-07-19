@@ -1,5 +1,4 @@
 // lib/src/settings_page.dart
-
 import 'package:flutter/material.dart';
 
 class SettingsPage extends StatelessWidget {
@@ -16,7 +15,7 @@ class SettingsPage extends StatelessWidget {
               'Focus Board v1.0',
               style: Theme.of(context).textTheme.titleLarge,
             ),
-                SizedBox(height: 12),
+            SizedBox(height: 12),
             Text('Um app focado em foco e desempenho, certifique-se de o utilizar apenas em um monitor widescreen ou quando houver mais de um monitor.'),
             SizedBox(height: 24),
             Text('Desenvolvido por Diego Costa.'),

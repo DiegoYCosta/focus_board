@@ -1,11 +1,13 @@
+// lib/src/widgets/snap_window_manager_button.dart
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:screen_retriever/screen_retriever.dart';
+import '../windows_docking.dart';
 
 enum WindowMode {
   normal,
   alwaysOnTop,
-  }
+}
 
 class SnapWindowManagerButton extends StatefulWidget {
   final double snapWidth;
@@ -16,7 +18,7 @@ class SnapWindowManagerButton extends StatefulWidget {
     Key? key,
     this.snapWidth = 350,
     this.snapHeight = 450,
-    this.customSnapYOffset, // Use para ajustar offset da taskbar, se quiser
+    this.customSnapYOffset,
   }) : super(key: key);
 
   @override
@@ -26,7 +28,22 @@ class SnapWindowManagerButton extends StatefulWidget {
 class _SnapWindowManagerButtonState extends State<SnapWindowManagerButton> {
   WindowMode _mode = WindowMode.normal;
 
+  @override
+  void initState() {
+    super.initState();
+    _checkInitialMode();
+  }
+
+  Future<void> _checkInitialMode() async {
+    final isAlwaysOnTop = await windowManager.isAlwaysOnTop();
+    setState(() {
+      _mode = isAlwaysOnTop ? WindowMode.alwaysOnTop : WindowMode.normal;
+    });
+  }
+
   Future<void> _toggleMode() async {
+    if (WindowDocking.isDocked()) return; // Desativa se dockado
+
     WindowMode nextMode;
     switch (_mode) {
       case WindowMode.normal:
@@ -44,6 +61,8 @@ class _SnapWindowManagerButtonState extends State<SnapWindowManagerButton> {
   }
 
   Future<void> _snapWindow() async {
+    if (WindowDocking.isDocked()) return; // Desativa se dockado
+
     final display = await screenRetriever.getPrimaryDisplay();
     final screenWidth = display.size.width;
     final screenHeight = display.size.height;
@@ -68,24 +87,30 @@ class _SnapWindowManagerButtonState extends State<SnapWindowManagerButton> {
     String tooltip;
     Color? color;
 
-    switch (_mode) {
-      case WindowMode.normal:
-        icon = Icons.push_pin_outlined;
-        tooltip = 'Modo normal (Clique para fixar no topo)';
-        color = Colors.white;
-        break;
-      case WindowMode.alwaysOnTop:
-        icon = Icons.push_pin;
-        tooltip = 'Fixado no topo (Clique para desfazer)';
-        color = Colors.orange;
-        break;
+    if (WindowDocking.isDocked()) {
+      icon = Icons.push_pin;
+      tooltip = 'Janela dockada (use o botão de docking para gerenciar)';
+      color = Colors.grey;
+    } else {
+      switch (_mode) {
+        case WindowMode.normal:
+          icon = Icons.push_pin_outlined;
+          tooltip = 'Modo normal (Clique para fixar no topo)';
+          color = Colors.white;
+          break;
+        case WindowMode.alwaysOnTop:
+          icon = Icons.push_pin;
+          tooltip = 'Fixado no topo (Clique para desfazer)';
+          color = Colors.orange;
+          break;
+      }
     }
 
     return Tooltip(
       message: tooltip,
       child: IconButton(
         icon: Icon(icon, color: color, size: 20),
-        onPressed: _toggleMode,
+        onPressed: WindowDocking.isDocked() ? null : _toggleMode,
         splashRadius: 20,
         padding: EdgeInsets.zero,
         constraints: BoxConstraints.tight(Size(36, 36)),

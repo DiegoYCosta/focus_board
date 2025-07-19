@@ -1,3 +1,4 @@
+// lib/src/widgets/empty_tips_placeholder.dart
 import 'package:flutter/material.dart';
 
 class EmptyTipsPlaceholder extends StatelessWidget {

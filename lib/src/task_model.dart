@@ -1,3 +1,4 @@
+// lib/src/task_model.dart
 import 'package:uuid/uuid.dart';
 
 class TaskModel {

@@ -3,12 +3,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../tip_model.dart';
-import '../tip_edit_dialog.dart';
+import '../tip_edit_dialog.dart'; // Correct import
 import '../tip_storage.dart';
 import 'draggable_tip_grid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Diálogo que exibe uma galeria de dicas com grid arrastável.
 class TipGalleryDialog extends StatefulWidget {
   final List<TipModel> tips;
   final Set<int> selectedIndexes;
@@ -47,29 +46,25 @@ class _TipGalleryDialogState extends State<TipGalleryDialog> {
     super.dispose();
   }
 
-  //Função limpar cachê
   Future<void> _clearGalleryCache() async {
     setState(() => cleaningCache = true);
     try {
-      // 1) Limpa as miniaturas da galeria
       final tempDir = await getTemporaryDirectory();
       final cacheDir = Directory('${tempDir.path}/focus_gallery_thumbs');
       if (await cacheDir.exists()) {
         await cacheDir.delete(recursive: true);
       }
-      // 2) Remove prefs da pasta, exe e ícone
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('default_folder');
       await prefs.remove('default_exe');
       await prefs.remove('default_exe_icon');
-      // 3) Deleta o arquivo de ícone extraído
       final appSupportDir = await getApplicationSupportDirectory();
       final iconFile = File('${appSupportDir.path}/exe_icon.ico');
       if (await iconFile.exists()) {
         await iconFile.delete();
       }
     } catch (_) {
-      // silencioso em caso de erro
+      // Silent error handling
     }
     setState(() => cleaningCache = false);
 
@@ -78,12 +73,13 @@ class _TipGalleryDialogState extends State<TipGalleryDialog> {
         const SnackBar(content: Text('Cache e configurações limpas!')),
       );
     }
+    widget.onCacheCleared?.call();
   }
 
   Future<void> _addNewTip() async {
     final newTip = await showDialog<TipModel>(
       context: context,
-      builder: (_) => const TipEditDialog(),
+      builder: (_) => const TipEditDialog(), // Correct usage
     );
     if (newTip != null) {
       setState(() {
@@ -94,9 +90,11 @@ class _TipGalleryDialogState extends State<TipGalleryDialog> {
       try {
         await TipStorage.saveTips(widget.tips);
       } catch (e) {
-        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao salvar nova dica: \$e')),
-        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erro ao salvar nova dica: $e')),
+          );
+        }
       }
       await Future.delayed(Duration.zero);
       if (_scrollController.hasClients) {
@@ -112,7 +110,7 @@ class _TipGalleryDialogState extends State<TipGalleryDialog> {
   Future<void> _editTip(int idx) async {
     final editedTip = await showDialog<TipModel>(
       context: context,
-      builder: (_) => TipEditDialog(tip: widget.tips[idx]),
+      builder: (_) => TipEditDialog(tip: widget.tips[idx]), // Correct usage
     );
     if (editedTip != null) {
       setState(() {
@@ -138,7 +136,6 @@ class _TipGalleryDialogState extends State<TipGalleryDialog> {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             child: Column(
               children: [
-                // HEADER
                 Row(
                   children: [
                     const Icon(Icons.collections, color: Colors.deepPurple, size: 20),
@@ -157,7 +154,6 @@ class _TipGalleryDialogState extends State<TipGalleryDialog> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                // GRID ARRASTÁVEL OU PLACEHOLDER
                 Expanded(
                   child: isEmpty
                       ? const Center(
@@ -167,7 +163,7 @@ class _TipGalleryDialogState extends State<TipGalleryDialog> {
                       style: TextStyle(fontSize: 16, color: Colors.black45),
                     ),
                   )
-                  : DraggableTipGrid(
+                      : DraggableTipGrid(
                     tips: widget.tips,
                     selectedIndexes: localSelection,
                     onSelectionChanged: (sel) {
@@ -179,15 +175,14 @@ class _TipGalleryDialogState extends State<TipGalleryDialog> {
                     onEdit: _editTip,
                     scrollController: _scrollController,
                   ),
-                  
                 ),
-                // BOTÃO LIMPAR CACHE
                 Align(
                   alignment: Alignment.bottomLeft,
                   child: ElevatedButton.icon(
-                    onPressed: cleaningCache ? null : () async {
+                    onPressed: cleaningCache
+                        ? null
+                        : () async {
                       await _clearGalleryCache();
-                      widget.onCacheCleared?.call();
                     },
                     icon: const Icon(Icons.cleaning_services, size: 12),
                     label: const Text('Limpar Cache', style: TextStyle(fontSize: 8)),

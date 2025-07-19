@@ -1,3 +1,4 @@
+// lib/src/tip_model.dart
 import 'dart:io';
 
 class TipModel {

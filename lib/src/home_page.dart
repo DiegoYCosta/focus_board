@@ -3,9 +3,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-
-
-
 import 'package:flutter/material.dart';
 import 'package:focus_board/src/task_storage.dart';
 import 'package:intl/intl.dart';
@@ -19,7 +16,7 @@ import 'package:provider/provider.dart';
 
 import 'tip_model.dart';
 import 'tip_storage.dart';
-import 'tip_edit_dialog.dart';
+import 'tip_edit_dialog.dart'; // Correct import
 import 'theme_manager.dart';
 import 'settings_page.dart';
 import 'widgets/empty_tips_placeholder.dart';
@@ -28,7 +25,6 @@ import 'widgets/snap_window_manager_button.dart';
 import 'task_section.dart';
 import 'task_model.dart';
 import 'windows_docking.dart';
-
 
 class HomePage extends StatefulWidget {
   @override
@@ -51,8 +47,6 @@ class _HomePageState extends State<HomePage> with WindowListener {
   String? _savedExePath;
   String? _savedExeIconPath;
 
-  bool _isDocked = false; // Adicionado: variável para rastrear docking
-
   List<TipModel> get visibleTips {
     if (selectedIndexes.isEmpty) return tips;
     return [
@@ -69,11 +63,6 @@ class _HomePageState extends State<HomePage> with WindowListener {
     _loadSlideshowInterval();
     _loadSavedPaths();
     _initializeWindowSize();
-    // Opcional: Descomente se quiser dockar automaticamente no startup
-    // if (Platform.isWindows) {
-    //   dockWindowToRight();
-    //   _isDocked = true;
-    // }
   }
 
   Future<void> _initializeWindowSize() async {
@@ -177,12 +166,12 @@ class _HomePageState extends State<HomePage> with WindowListener {
       '-NoProfile',
       '-Command',
       """
-Add-Type -AssemblyName System.Drawing;
-\$icon = [System.Drawing.Icon]::ExtractAssociatedIcon('${exePath.replaceAll(r"'", "''")}');
-\$fs = [System.IO.File]::Open('${iconFile.path.replaceAll(r"'", "''")}', 'Create');
-\$icon.Save(\$fs);
-\$fs.Close();
-"""
+      Add-Type -AssemblyName System.Drawing;
+      \$icon = [System.Drawing.Icon]::ExtractAssociatedIcon('${exePath.replaceAll(r"'", "''")}');
+      \$fs = [System.IO.File]::Open('${iconFile.path.replaceAll(r"'", "''")}', 'Create');
+      \$icon.Save(\$fs);
+      \$fs.Close();
+      """
     ];
 
     final proc = await Process.run('powershell', psArgs);
@@ -308,7 +297,7 @@ Add-Type -AssemblyName System.Drawing;
   Future<void> _addOrEditTip([TipModel? tip, int? editIdx]) async {
     final result = await showDialog<TipModel>(
       context: context,
-      builder: (_) => TipEditDialog(tip: tip),
+      builder: (_) => TipEditDialog(tip: tip), // Correct usage
     );
     if (result != null) {
       if (editIdx != null) {
@@ -439,9 +428,7 @@ Add-Type -AssemblyName System.Drawing;
   @override
   Widget build(BuildContext context) {
     final tipList = visibleTips;
-    final tip = tipList.isNotEmpty && currentIndex < tipList.length
-        ? tipList[currentIndex]
-        : null;
+    final tip = tipList.isNotEmpty && currentIndex < tipList.length ? tipList[currentIndex] : null;
     final themeManager = Provider.of<ThemeManager>(context);
 
     return Scaffold(
@@ -491,29 +478,47 @@ Add-Type -AssemblyName System.Drawing;
                             ),
                           ),
                           SnapWindowManagerButton(),
+                          if (Platform.isWindows)
+                            Tooltip(
+                              message: WindowDocking.isDocked() ? 'Desdockar Janela' : 'Dockar na Lateral Direita',
+                              child: IconButton(
+                                icon: Icon(
+                                  WindowDocking.isDocked() ? Icons.dock : Icons.dock_outlined,
+                                  color: WindowDocking.isDocked() ? Colors.green : Colors.white,
+                                ),
+                                onPressed: () async {
+                                  await WindowDocking.toggleDockRight();
+                                  if (WindowDocking.isDocked()) {
+                                    await _adjustWindowHeight(true); // Ativa TaskSection ao dockar
+                                  }
+                                  setState(() {});
+                                },
+                                splashRadius: 20,
+                                padding: EdgeInsets.zero,
+                                constraints: BoxConstraints.tight(Size(36, 36)),
+                              ),
+                            ),
                           PopupMenuButton<String>(
                             icon: Icon(Icons.menu, color: Colors.white),
                             tooltip: 'Menu e Configurações',
-                            onSelected: (value) {
+                            onSelected: (value) async {
                               if (value == 'settings') {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(builder: (_) => SettingsPage()),
                                 );
                               } else if (value.startsWith('theme_')) {
                                 final selected = AppThemeType.values.firstWhere(
-                                        (t) => 'theme_${t.name}' == value);
-                                Provider.of<ThemeManager>(context, listen: false)
-                                    .setTheme(selected);
-                              } else if (value == 'dock') { // Adicionado: handler para dock
-                                if (_isDocked) {
-                                  undockWindow();
-                                  setState(() => _isDocked = false);
-                                } else {
-                                  dockWindowToRight();
-                                  setState(() => _isDocked = true);
+                                      (t) => 'theme_${t.name}' == value,
+                                );
+                                Provider.of<ThemeManager>(context, listen: false).setTheme(selected);
+                              } else if (value == 'dock') {
+                                await WindowDocking.toggleDockRight();
+                                if (WindowDocking.isDocked()) {
+                                  await _adjustWindowHeight(true); // Ativa TaskSection ao dockar
                                 }
-                              } else if (value == 'minimize') { // Adicionado: handler para minimizar
-                                minimizeWindow();
+                                setState(() {});
+                              } else if (value == 'minimize') {
+                                await WindowDocking.minimizeWindow();
                               }
                             },
                             itemBuilder: (_) => [
@@ -529,12 +534,9 @@ Add-Type -AssemblyName System.Drawing;
                                         initialValue: slideshowInterval.toString(),
                                         keyboardType: TextInputType.number,
                                         onFieldSubmitted: (v) async {
-                                          final newInterval =
-                                              int.tryParse(v) ?? slideshowInterval;
-                                          final prefs =
-                                          await SharedPreferences.getInstance();
-                                          await prefs.setInt(
-                                              'slideshowInterval', newInterval);
+                                          final newInterval = int.tryParse(v) ?? slideshowInterval;
+                                          final prefs = await SharedPreferences.getInstance();
+                                          await prefs.setInt('slideshowInterval', newInterval);
                                           setState(() {
                                             slideshowInterval = newInterval;
                                             if (slideshowActive) {
@@ -561,10 +563,10 @@ Add-Type -AssemblyName System.Drawing;
                               )),
                               PopupMenuDivider(),
                               PopupMenuItem(value: 'settings', child: Text('Sobre o App')),
-                              PopupMenuDivider(), // Adicionado: itens novos para dock e minimizar
+                              PopupMenuDivider(),
                               PopupMenuItem(
                                 value: 'dock',
-                                child: Text(_isDocked ? 'Desdockar' : 'Dockar na Direita'),
+                                child: Text(WindowDocking.isDocked() ? 'Desdockar' : 'Dockar na Direita'),
                               ),
                               PopupMenuItem(
                                 value: 'minimize',
@@ -611,15 +613,28 @@ Add-Type -AssemblyName System.Drawing;
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
-                    IconButton(
-                      icon: Icon(Icons.filter_list, size: 14, color: Colors.grey[600]),
-                      onPressed: () async {
-                        await _adjustWindowHeight(!_showTasks);
-                      },
-                      tooltip: 'Mostrar/Ocultar Tarefas',
-                      splashRadius: 20,
-                      padding: EdgeInsets.zero,
-                      constraints: BoxConstraints.tight(Size(36, 36)),
+                    Tooltip(
+                      message: WindowDocking.isDocked()
+                          ? 'Tarefas visíveis (não pode ocultar enquanto dockado)'
+                          : 'Mostrar/Ocultar Tarefas',
+                      child: IconButton(
+                        icon: Icon(
+                          Icons.filter_list,
+                          size: 14,
+                          color: WindowDocking.isDocked() ? Colors.grey[400] : Colors.grey[600],
+                        ),
+                        onPressed: WindowDocking.isDocked()
+                            ? null
+                            : () async {
+                          await _adjustWindowHeight(!_showTasks);
+                        },
+                        tooltip: WindowDocking.isDocked()
+                            ? 'Tarefas visíveis (não pode ocultar enquanto dockado)'
+                            : 'Mostrar/Ocultar Tarefas',
+                        splashRadius: 20,
+                        padding: EdgeInsets.zero,
+                        constraints: BoxConstraints.tight(Size(36, 36)),
+                      ),
                     ),
                     IconButton(
                       icon: Icon(Icons.folder),
@@ -631,8 +646,7 @@ Add-Type -AssemblyName System.Drawing;
                       constraints: BoxConstraints.tight(Size(36, 36)),
                     ),
                     IconButton(
-                      icon: _savedExeIconPath != null &&
-                          File(_savedExeIconPath!).existsSync()
+                      icon: _savedExeIconPath != null && File(_savedExeIconPath!).existsSync()
                           ? ImageIcon(
                         FileImage(File(_savedExeIconPath!)),
                         size: 14,
@@ -643,7 +657,7 @@ Add-Type -AssemblyName System.Drawing;
                       onLongPress: _pickExe,
                       splashRadius: 20,
                       padding: EdgeInsets.zero,
-                      constraints: BoxConstraints.tight(Size(16, 16)),
+                      constraints: BoxConstraints.tight(Size(36, 36)),
                     ),
                     IconButton(
                       icon: Icon(Icons.grid_view, size: 14, color: Colors.grey[600]),
@@ -656,40 +670,71 @@ Add-Type -AssemblyName System.Drawing;
                     IconButton(
                       icon: Icon(Icons.history, size: 14, color: Colors.grey[600]),
                       onPressed: () {
-                        // Implementar diálogo ou navegação para tarefas concluídas/destruídas
                         showDialog(
                           context: context,
                           builder: (context) => AlertDialog(
-                            title: Text('Tarefas Concluídas/Destruídas'),
-                            content: FutureBuilder<List<TaskModel>>(
-                              future: TaskStorage.loadTasks(),
-                              builder: (context, snapshot) {
-                                if (!snapshot.hasData) return CircularProgressIndicator();
-                                final completedTasks = snapshot.data!
-                                    .where((t) => t.isCompleted || t.isDeleted)
-                                    .toList();
-                                if (completedTasks.isEmpty) {
-                                  return Text('Nenhuma tarefa concluída.');
-                                }
-                                return ListView.builder(
-                                  shrinkWrap: true,
-                                  itemCount: completedTasks.length,
-                                  itemBuilder: (context, index) {
-                                    final task = completedTasks[index];
-                                    return ListTile(
-                                      title: Text(task.title),
-                                      subtitle: task.isCompleted
-                                          ? Text('Concluída em: ${DateFormat('dd/MM/yyyy HH:mm').format(task.completionDate!)}')
-                                          : Text('Destruída'),
-                                    );
-                                  },
-                                );
-                              },
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            title: Text('Histórico de Tarefas', style: TextStyle(fontWeight: FontWeight.bold)),
+                            content: SizedBox(
+                              width: MediaQuery.of(context).size.width * 0.5,
+                              height: MediaQuery.of(context).size.height * 0.5,
+                              child: FutureBuilder<List<TaskModel>>(
+                                future: TaskStorage.loadTasks(),
+                                builder: (context, snapshot) {
+                                  if (!snapshot.hasData) return Center(child: CircularProgressIndicator());
+                                  final completedTasks = snapshot.data!
+                                      .where((t) => t.isCompleted || t.isDeleted)
+                                      .toList();
+                                  if (completedTasks.isEmpty) {
+                                    return Center(
+                                        child: Text('Nenhuma tarefa concluída ou destruída.',
+                                            style: TextStyle(color: Colors.grey[600])));
+                                  }
+                                  return ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: completedTasks.length,
+                                    itemBuilder: (context, index) {
+                                      final task = completedTasks[index];
+                                      return Card(
+                                        elevation: 4,
+                                        color: task.isUrgent
+                                            ? Colors.red[50]
+                                            : task.isImportant
+                                            ? Colors.yellow[50]
+                                            : Colors.yellow[100],
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        margin: EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                                        child: ListTile(
+                                          title: Text(task.title, style: TextStyle(fontSize: 16)),
+                                          subtitle: Text(
+                                            task.isCompleted
+                                                ? 'Concluída em: ${DateFormat('dd/MM/yyyy HH:mm').format(task.completionDate!)}'
+                                                : 'Destruída',
+                                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                                          ),
+                                          trailing: task.isDeleted
+                                              ? IconButton(
+                                            icon: Icon(Icons.restore, size: 18, color: Colors.blue[600]),
+                                            tooltip: 'Restaurar Tarefa',
+                                            onPressed: () async {
+                                              task.isDeleted = false;
+                                              await TaskStorage.saveTasks(snapshot.data!);
+                                              Navigator.pop(context);
+                                              setState(() {});
+                                            },
+                                          )
+                                              : null,
+                                        ),
+                                      );
+                                    },
+                                  );
+                                },
+                              ),
                             ),
                             actions: [
                               TextButton(
                                 onPressed: () => Navigator.pop(context),
-                                child: Text('Fechar'),
+                                child: Text('Fechar', style: TextStyle(color: Colors.grey[600])),
                               ),
                             ],
                           ),
