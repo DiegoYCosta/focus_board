@@ -255,8 +255,8 @@ RECT Win32Window::GetClientArea() {
   return frame;
 }
 
-HWND Win32Window::GetHandle() {
-  return window_handle_;
+HWND Win32Window::GetHandle() const {
+    return window_handle_;
 }
 
 void Win32Window::SetQuitOnClose(bool quit_on_close) {

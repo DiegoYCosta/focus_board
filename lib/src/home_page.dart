@@ -1,7 +1,10 @@
 // lib/src/home_page.dart
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show Size;
+import 'dart:ui' as ui;
+
+
+
 
 import 'package:flutter/material.dart';
 import 'package:focus_board/src/task_storage.dart';
@@ -24,6 +27,8 @@ import 'widgets/tip_gallery_dialog.dart';
 import 'widgets/snap_window_manager_button.dart';
 import 'task_section.dart';
 import 'task_model.dart';
+import 'windows_docking.dart';
+
 
 class HomePage extends StatefulWidget {
   @override
@@ -46,6 +51,8 @@ class _HomePageState extends State<HomePage> with WindowListener {
   String? _savedExePath;
   String? _savedExeIconPath;
 
+  bool _isDocked = false; // Adicionado: variável para rastrear docking
+
   List<TipModel> get visibleTips {
     if (selectedIndexes.isEmpty) return tips;
     return [
@@ -62,6 +69,11 @@ class _HomePageState extends State<HomePage> with WindowListener {
     _loadSlideshowInterval();
     _loadSavedPaths();
     _initializeWindowSize();
+    // Opcional: Descomente se quiser dockar automaticamente no startup
+    // if (Platform.isWindows) {
+    //   dockWindowToRight();
+    //   _isDocked = true;
+    // }
   }
 
   Future<void> _initializeWindowSize() async {
@@ -492,6 +504,16 @@ Add-Type -AssemblyName System.Drawing;
                                         (t) => 'theme_${t.name}' == value);
                                 Provider.of<ThemeManager>(context, listen: false)
                                     .setTheme(selected);
+                              } else if (value == 'dock') { // Adicionado: handler para dock
+                                if (_isDocked) {
+                                  undockWindow();
+                                  setState(() => _isDocked = false);
+                                } else {
+                                  dockWindowToRight();
+                                  setState(() => _isDocked = true);
+                                }
+                              } else if (value == 'minimize') { // Adicionado: handler para minimizar
+                                minimizeWindow();
                               }
                             },
                             itemBuilder: (_) => [
@@ -539,6 +561,15 @@ Add-Type -AssemblyName System.Drawing;
                               )),
                               PopupMenuDivider(),
                               PopupMenuItem(value: 'settings', child: Text('Sobre o App')),
+                              PopupMenuDivider(), // Adicionado: itens novos para dock e minimizar
+                              PopupMenuItem(
+                                value: 'dock',
+                                child: Text(_isDocked ? 'Desdockar' : 'Dockar na Direita'),
+                              ),
+                              PopupMenuItem(
+                                value: 'minimize',
+                                child: Text('Minimizar'),
+                              ),
                             ],
                           ),
                         ],
