@@ -6,7 +6,7 @@ import 'package:uuid/uuid.dart';
 
 class TaskEditDialog extends StatefulWidget {
   final TaskModel? task;
-  final bool isNew; // Flag para diferenciar criação de edição
+  final bool isNew;
 
   const TaskEditDialog({Key? key, this.task, this.isNew = false}) : super(key: key);
 
@@ -16,31 +16,37 @@ class TaskEditDialog extends StatefulWidget {
 
 class _TaskEditDialogState extends State<TaskEditDialog> {
   final _titleController = TextEditingController();
-  String _priority = 'normal'; // Gerencia prioridade (normal, importante, urgente)
+  int _priorityLevel = 0;  // 0: normal, 1: important, 2: urgent (ciclo)
   DateTime? _dueDate;
   bool _hasAlarm = false;
   DateTime? _alarmTime;
   bool _hasTimer = false;
   Duration? _timerDuration;
-  bool _showAdvanced = false; // Controla visibilidade das opções avançadas
 
   @override
   void initState() {
     super.initState();
     if (widget.task != null) {
       _titleController.text = widget.task!.title;
-      _priority = widget.task!.isUrgent
-          ? 'urgent'
-          : widget.task!.isImportant
-          ? 'important'
-          : 'normal';
+      _priorityLevel = widget.task!.isUrgent ? 2 : widget.task!.isImportant ? 1 : 0;
       _dueDate = widget.task!.dueDate;
       _hasAlarm = widget.task!.hasAlarm;
       _alarmTime = widget.task!.alarmTime;
       _hasTimer = widget.task!.hasTimer;
       _timerDuration = widget.task!.timerDuration;
-      _showAdvanced = widget.task!.dueDate != null || widget.task!.hasAlarm || widget.task!.hasTimer;
     }
+  }
+
+  void _cyclePriority() {
+    setState(() => _priorityLevel = (_priorityLevel + 1) % 3);
+  }
+
+  IconData _getPriorityIcon() {
+    return _priorityLevel == 2 ? Icons.warning_rounded : _priorityLevel == 1 ? Icons.priority_high_rounded : Icons.circle_outlined;
+  }
+
+  Color _getPriorityColor() {
+    return _priorityLevel == 2 ? Colors.red[600]! : _priorityLevel == 1 ? Colors.yellow[800]! : Colors.grey[600]!;
   }
 
   Future<void> _selectDate() async {
@@ -138,128 +144,57 @@ class _TaskEditDialogState extends State<TaskEditDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      title: Text(
-        widget.isNew ? 'Nova Tarefa' : 'Editar Tarefa',
-        style: TextStyle(fontFamily: 'Roboto', fontWeight: FontWeight.bold),
+      title: Row(
+        children: [
+          Expanded(child: Text(widget.isNew ? 'Nova Tarefa' : 'Editar', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+          IconButton(
+            icon: Icon(_getPriorityIcon(), color: _getPriorityColor(), size: 18),  // Ícone pequeno togglable
+            onPressed: _cyclePriority,
+            tooltip: 'Alternar Prioridade',
+          ),
+        ],
       ),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _titleController,
-              decoration: InputDecoration(
-                labelText: 'Título (opcional)',
-                hintText: 'Digite o título da tarefa',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _titleController,
+            decoration: InputDecoration(hintText: 'Tarefa...', border: InputBorder.none),
+            autofocus: true,
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              IconButton(
+                icon: Icon(Icons.calendar_today, size: 18, color: _dueDate != null ? Colors.teal[600] : Colors.grey),
+                onPressed: _selectDate,
+                tooltip: 'Data de Vencimento',
               ),
-              style: TextStyle(fontFamily: 'Roboto'),
-            ),
-            SizedBox(height: 12),
-            Text('Prioridade', style: TextStyle(fontWeight: FontWeight.bold, fontFamily: 'Roboto')),
-            DropdownButton<String>(
-              value: _priority,
-              isExpanded: true,
-              items: [
-                DropdownMenuItem(value: 'normal', child: Text('Normal', style: TextStyle(fontFamily: 'Roboto'))),
-                DropdownMenuItem(value: 'important', child: Text('Importante', style: TextStyle(fontFamily: 'Roboto'))),
-                DropdownMenuItem(value: 'urgent', child: Text('Urgente', style: TextStyle(fontFamily: 'Roboto'))),
-              ],
-              onChanged: (value) => setState(() => _priority = value!),
-              style: TextStyle(fontFamily: 'Roboto', color: Colors.black),
-              dropdownColor: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            if (!widget.isNew || _showAdvanced) ...[
-              SizedBox(height: 12),
-              ListTile(
-                title: Text(
-                  'Vencimento: ${_dueDate != null ? DateFormat('dd/MM/yyyy').format(_dueDate!) : 'Não definida'}',
-                  style: TextStyle(fontFamily: 'Roboto'),
-                ),
-                trailing: Icon(Icons.calendar_today_rounded, color: Colors.teal[600], size: 18),
-                onTap: _selectDate,
-                subtitle: Text(
-                  'Toque para selecionar a data',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600], fontFamily: 'Roboto'),
-                ),
+              IconButton(
+                icon: Icon(Icons.alarm, size: 18, color: _hasAlarm ? Colors.blue[600] : Colors.grey),
+                onPressed: () => setState(() => _hasAlarm = !_hasAlarm),  // Toggle simples
+                tooltip: 'Alarme',
               ),
-              SwitchListTile(
-                title: Text('Alarme', style: TextStyle(fontFamily: 'Roboto')),
-                value: _hasAlarm,
-                onChanged: (value) => setState(() => _hasAlarm = value),
-                secondary: Icon(Icons.alarm_rounded, color: Colors.blue[600], size: 18),
-                subtitle: Text(
-                  'Ativar alarme para notificação',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600], fontFamily: 'Roboto'),
-                ),
+              if (_hasAlarm) IconButton(icon: Icon(Icons.access_time, size: 18), onPressed: _selectAlarmTime),
+              IconButton(
+                icon: Icon(Icons.timer, size: 18, color: _hasTimer ? Colors.orange[600] : Colors.grey),
+                onPressed: () => setState(() => _hasTimer = !_hasTimer),
+                tooltip: 'Temporizador',
               ),
-              if (_hasAlarm)
-                ListTile(
-                  title: Text(
-                    'Hora: ${_alarmTime != null ? DateFormat('HH:mm').format(_alarmTime!) : 'Não definida'}',
-                    style: TextStyle(fontFamily: 'Roboto'),
-                  ),
-                  trailing: Icon(Icons.access_time_rounded, color: Colors.blue[600], size: 18),
-                  onTap: _selectAlarmTime,
-                  subtitle: Text(
-                    'Toque para definir o horário',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600], fontFamily: 'Roboto'),
-                  ),
-                ),
-              SwitchListTile(
-                title: Text('Temporizador', style: TextStyle(fontFamily: 'Roboto')),
-                value: _hasTimer,
-                onChanged: (value) => setState(() => _hasTimer = value),
-                secondary: Icon(Icons.timer_rounded, color: Colors.orange[600], size: 18),
-                subtitle: Text(
-                  'Ativar temporizador para contagem',
-                  style: TextStyle(fontSize: 12, color: Colors.grey[600], fontFamily: 'Roboto'),
-                ),
-              ),
-              if (_hasTimer)
-                ListTile(
-                  title: Text(
-                    'Duração: ${_timerDuration != null ? '${_timerDuration!.inMinutes} min' : 'Não definida'}',
-                    style: TextStyle(fontFamily: 'Roboto'),
-                  ),
-                  trailing: Icon(Icons.schedule_rounded, color: Colors.orange[600], size: 18),
-                  onTap: _selectTimerDuration,
-                  subtitle: Text(
-                    'Toque para definir a duração',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600], fontFamily: 'Roboto'),
-                  ),
-                ),
+              if (_hasTimer) IconButton(icon: Icon(Icons.schedule, size: 18), onPressed: _selectTimerDuration),
             ],
-            if (widget.isNew)
-              TextButton(
-                onPressed: () => setState(() => _showAdvanced = !_showAdvanced),
-                child: Text(
-                  _showAdvanced ? 'Ocultar Configurações Avançadas' : 'Mostrar Configurações Avançadas',
-                  style: TextStyle(color: Colors.blue[600], fontFamily: 'Roboto'),
-                ),
-              ),
-          ],
-        ),
+          ),
+        ],
       ),
       actions: [
-        TextButton(
-          child: Text('Cancelar', style: TextStyle(color: Colors.grey[600], fontFamily: 'Roboto')),
-          onPressed: () => Navigator.pop(context),
-        ),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancelar')),
         ElevatedButton(
-          child: Text('Salvar', style: TextStyle(color: Colors.white, fontFamily: 'Roboto')),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.blue[600],
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
           onPressed: () {
             final task = TaskModel(
               id: widget.task?.id ?? const Uuid().v4(),
-              title: _titleController.text.isEmpty ? 'Tarefa sem título' : _titleController.text,
-              isUrgent: _priority == 'urgent',
-              isImportant: _priority == 'important',
+              title: _titleController.text.isEmpty ? 'Sem título' : _titleController.text,
+              isUrgent: _priorityLevel == 2,
+              isImportant: _priorityLevel == 1,
               dueDate: _dueDate,
               hasAlarm: _hasAlarm,
               alarmTime: _alarmTime,
@@ -268,6 +203,7 @@ class _TaskEditDialogState extends State<TaskEditDialog> {
             );
             Navigator.pop(context, task);
           },
+          child: Text('Salvar'),
         ),
       ],
     );
